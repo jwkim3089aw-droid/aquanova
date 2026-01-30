@@ -76,6 +76,7 @@ scripts\extract_file_list.py
 scripts\test_hrro_debug.py
 scripts\trace_hrro.py
 scripts\tree.py
+scripts\verify_110_bug.py
 scripts\verify_hrro_patch.py
 tests\conftest.py
 tests\test_api_simulation_reports.py

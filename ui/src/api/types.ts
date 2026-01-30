@@ -1,25 +1,43 @@
+// ui\src\api\types.ts
 // ui/src/api/types.ts
 
 // ==========================================
-// 1. Request Types (보내는 데이터)
+// 1. Request Types (Client -> Server)
 // ==========================================
 
 export interface StageConfig {
   stage_id?: string;
-  // 백엔드 Enum: "RO" | "HRRO" | "NF" | "UF" | "MF"
-  module_type: string;
+  module_type: string; // "RO" | "HRRO" | "NF" | "UF" | "MF"
   elements: number;
+
+  // Basic Operating Conditions
   pressure_bar?: number;
   recovery_target_pct?: number;
 
-  // 막(Membrane) 정보
+  // Membrane Specs
   membrane_model?: string;
   membrane_area_m2?: number;
   membrane_A_lmh_bar?: number;
   membrane_B_lmh?: number;
   membrane_salt_rejection_pct?: number;
 
-  // 기타 속성 (HRRO, UF 등)
+  // ✅ [FIX] HRRO Critical Control Parameters
+  // 110% 폭주 방지를 위한 종료 트리거 명시
+  stop_recovery_pct?: number;
+  stop_permeate_tds_mgL?: number;
+  loop_volume_m3?: number;
+  recirc_flow_m3h?: number;
+  bleed_m3h?: number;
+  max_minutes?: number;
+  timestep_s?: number;
+
+  // UF/MF Specifics
+  filtration_cycle_min?: number;
+  backwash_duration_sec?: number;
+  flux_lmh?: number;
+  backwash_flux_lmh?: number;
+
+  // Allow extra props for flexibility
   [key: string]: any;
 }
 
@@ -38,7 +56,7 @@ export interface SimulationRequest {
 }
 
 // ==========================================
-// 2. Response Types (받는 데이터)
+// 2. Response Types (Server -> Client)
 // ==========================================
 
 export interface TimeSeriesPoint {
@@ -56,15 +74,15 @@ export interface StageMetric {
   stage: number;
   module_type: string;
 
-  // 주요 운전 지표
+  // Key Performance Indicators
   p_in_bar?: number;
   p_out_bar?: number;
   sec_kwhm3?: number;
-  jw_avg_lmh?: number; // flux
+  jw_avg_lmh?: number;
   ndp_bar?: number;
   recovery_pct?: number;
 
-  // 유량 밸런스
+  // Mass Balance
   Qf?: number;
   Qp?: number;
   Qc?: number;
@@ -72,7 +90,13 @@ export interface StageMetric {
   Cp?: number;
   Cc?: number;
 
-  // 그래프 데이터
+  // UF/MF Metrics
+  gross_flow_m3h?: number;
+  net_flow_m3h?: number;
+  backwash_loss_m3h?: number;
+  net_recovery_pct?: number;
+
+  // Time Series Data
   time_history?: TimeSeriesPoint[];
 }
 
@@ -88,7 +112,7 @@ export interface ScenarioOutput {
     permeate_m3h?: number;
   };
   stage_metrics?: StageMetric[];
-  time_history?: TimeSeriesPoint[]; // Root level history
+  time_history?: TimeSeriesPoint[];
   chemistry?: any;
 }
 

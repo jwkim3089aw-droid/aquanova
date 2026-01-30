@@ -3,11 +3,12 @@
 
 import { MarkerType, type Edge, type Node } from 'reactflow';
 
+// ✅ [FIX] 백엔드 스키마와 일치하는 타입을 Import
 import type {
+  StageConfig,
   ROStageMetric,
   ROScenarioOutput,
   HRRORunOutput,
-  StageConfig,
 } from '@/api/types';
 
 import type {
@@ -21,12 +22,6 @@ import type {
   UnitMode,
   SetNodesFn,
   SetEdgesFn,
-  UFConfig,
-  MFConfig,
-  ROConfig,
-  NFConfig,
-  HRROConfig,
-  UnitNodeRF,
 } from './types';
 
 import {
@@ -441,9 +436,9 @@ export function applyHRROChips(
   );
 }
 
-// ==============================
-// Stage payload builders (CORE FIX)
-// ==============================
+// =========================================================================
+// ✅ Stage payload builders (THE CRITICAL FIX FOR 110% BUG)
+// =========================================================================
 
 // Helper to extract membrane params
 function getMemParams(c: any) {
@@ -466,8 +461,8 @@ function getMemParams(c: any) {
 }
 
 /**
- * ReactFlow 노드를 백엔드 API 스키마(StageConfig)로 완벽하게 변환하는 함수
- * ✅ [CRITICAL FIX] 107% 폭주 방지: stop_recovery_pct 값을 강제 확보
+ * ReactFlow 노드를 백엔드 API 스키마(StageConfig)로 완벽하게 변환하는 함수.
+ * 110% 폭주 버그를 막기 위해 stop_recovery_pct 값을 강제로 주입합니다.
  */
 export function toStagePayload(
   n: UnitNode,
@@ -486,12 +481,12 @@ export function toStagePayload(
     pressureVal = convPress(num(pressureVal, 15), 'US', 'SI');
   }
 
-  // 2. HRRO Logic (✅ 107% Bug Fix)
+  // 2. HRRO Logic (✅ 110% Bug Fix Applied Here)
   if (kind === 'HRRO') {
-    // UI에서 입력된 값을 확실하게 가져옴 (값이 없으면 0이 아니라 undefined/null 처리를 위해 num 사용 주의)
-    // 중요: HRRO는 recovery_target_pct와 stop_recovery_pct가 같은 의미로 쓰임.
+    // UI에서 입력된 값을 확실하게 가져옴.
+    // 사용자가 'Recovery Target'을 입력하면 그것을 'Stop Trigger'로 간주.
     const stopRecInput =
-      Number(c.stop_recovery_pct) || Number(c.recovery_target_pct) || undefined;
+      Number(c.stop_recovery_pct) || Number(c.recovery_target_pct) || 90.0;
 
     return {
       stage_id: n.id,
@@ -499,18 +494,17 @@ export function toStagePayload(
       elements: clampInt(c.elements, 1, 12),
       pressure_bar: Number(pressureVal),
 
-      // HRRO Specific
+      // HRRO Specific Parameters
       loop_volume_m3: num(c.loop_volume_m3, 2),
       recirc_flow_m3h: num(c.recirc_flow_m3h, 12),
       bleed_m3h: num(c.bleed_m3h, 0),
-      makeup_tds_mgL: c.makeup_tds_mgL ?? null,
       timestep_s: clampInt(c.timestep_s, 1, 60),
-      max_minutes: num(c.max_minutes, 30),
+      max_minutes: num(c.max_minutes, 60),
       stop_permeate_tds_mgL: c.stop_permeate_tds_mgL ?? null,
 
-      // ✅ [CRITICAL PATCH] 이 값이 백엔드로 넘어가야 루프가 멈춥니다.
+      // 🔥 [CRITICAL FIX] 백엔드 계약서(StageConfig)에 명시된 필드에 값 주입
       stop_recovery_pct: stopRecInput,
-      recovery_target_pct: stopRecInput, // 호환성용
+      recovery_target_pct: stopRecInput, // 호환성 유지용
 
       mass_transfer: c.mass_transfer ?? null,
       spacer: c.spacer ?? null,
@@ -521,7 +515,6 @@ export function toStagePayload(
   // 3. UF/MF Logic
   if (kind === 'UF' || kind === 'MF') {
     const isUF = kind === 'UF';
-    // Flux 변환 (US -> SI) - 필요하다면 추가 구현, 여기선 값 그대로 사용 가정
     return {
       stage_id: n.id,
       module_type: kind,
