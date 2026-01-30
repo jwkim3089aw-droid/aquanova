@@ -1,0 +1,58 @@
+# ./docker-compose.yml
+services:
+  api:
+    build: .
+    command: [
+      "uvicorn", "app.main:app",
+      "--host", "0.0.0.0", "--port", "8003",
+      "--reload",
+      "--reload-dir", "app",
+      "--reload-exclude", ".pytest_cache/*",
+      "--reload-exclude", ".venv/*",
+      "--reload-exclude", "__pycache__/*"
+    ]
+    env_file: .env
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+      REDIS_URL: redis://redis:6379/0
+      DB_URL: sqlite:///./.data/aquanova.db     # [CHANGED] DATABASE_URL → DB_URL
+      PYTHONPATH: /app
+      REPORT_DIR: reports/outputs
+    volumes:
+      - ./:/app
+      - app_data:/app/.data
+      - app_reports:/app/reports/outputs
+    ports:
+      - "8003:8003"
+    depends_on:
+      redis:
+        condition: service_healthy               # [CHANGED]
+
+  worker:
+    build: .
+    command: python -m app.workers.report_worker
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DB_URL: sqlite:///./.data/aquanova.db     # [CHANGED]
+      PYTHONPATH: /app
+      REPORT_DIR: reports/outputs
+    volumes:
+      - ./:/app
+      - app_data:/app/.data
+      - app_reports:/app/reports/outputs
+    depends_on:
+      redis:
+        condition: service_healthy               # [CHANGED]
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:                                 # [ADDED]
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  app_data:
+  app_reports:

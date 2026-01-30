@@ -1,0 +1,21 @@
+﻿{
+    "project_id":  "11111111-1111-1111-1111-111111111111",
+    "scenario_name":  "RO MVP Test",
+    "feed":  {
+                 "flow_m3h":  10,
+                 "tds_mgL":  6360,
+                 "temperature_C":  25,
+                 "ph":  7
+             },
+    "stages":  [
+                   {
+                       "type":  "RO",
+                       "elements":  6,
+                       "pressure_bar":  15,
+                       "recovery_target_pct":  45
+                   }
+               ],
+    "options":  {
+
+                }
+}

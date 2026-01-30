@@ -1,0 +1,118 @@
+/* ui/src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =======================
+   Global Dark Theme
+   ======================= */
+
+/* 브라우저 다크 컬러 스킴 힌트 */
+:root {
+  color-scheme: dark; /* [UNCHANGED] */
+}
+
+/* 전체 배경 / 기본 텍스트 */
+body {
+  @apply bg-slate-950 text-slate-100; /* [UNCHANGED] */
+}
+
+/* -----------------------
+   (기존) 헤더 기본값
+   ----------------------- */
+header {
+  @apply bg-slate-950 text-slate-100 border-b border-slate-800; /* [UNCHANGED] */
+}
+
+header a,
+header button,
+header span {
+  @apply text-slate-100; /* [UNCHANGED] */
+}
+
+/* =======================
+   React Flow Controls 스타일
+   (좌측 + / - / fullscreen / lock 버튼)
+   ======================= */
+
+.react-flow__controls {
+  display: none !important;
+}
+
+.react-flow__controls-button {
+  @apply bg-slate-900 border border-slate-700 text-slate-100; /* [UNCHANGED] */
+}
+
+.react-flow__controls-button:hover {
+  @apply bg-slate-800; /* [UNCHANGED] */
+}
+
+.react-flow__controls-button svg {
+  @apply text-slate-100; /* [UNCHANGED] */
+}
+
+/* =======================
+   공통 입력 스타일
+   ======================= */
+
+.input {
+  @apply w-full rounded-xl border border-slate-700 bg-slate-900
+         px-3 py-2 text-slate-100 outline-none
+         focus:ring-2 focus:ring-sky-500/40; /* [UNCHANGED] */
+}
+
+/* =======================
+   ⬇⬇ 문제의 "하얀 상단 바" 강제 다크 테마
+   (#root 바로 아래에 있는 옛날 라이트 쉘 + 헤더)
+   ======================= */
+
+/* #root 바로 아래의 첫 div (min-h-screen bg-zinc-50 였던 놈) */
+body > #root > div {        /* [ADDED] */
+  @apply min-h-screen bg-slate-950 text-slate-100;
+}
+
+/* 그 div 안의 고정 헤더 (로고 + Reports 탭이 있는 흰 헤더) */
+body > #root > div > header { /* [ADDED] */
+  @apply bg-slate-950/95 border-b border-slate-800 text-slate-100;
+}
+
+/* 상단 글로벌 헤더 안 링크 색상 */
+body > #root > div > header a { /* [ADDED] */
+  @apply text-slate-100 hover:text-slate-50;
+}
+
+/* =========================================================
+   Recharts (ResponsiveContainer) Size Fix
+   - 경고: width(-1) / height(-1)
+   - 원인: 부모 컨테이너가 flex/grid에서 min-height/min-width가 0으로
+          계산되거나, 초기 렌더 시 높이 0인 상태에서 차트가 렌더됨
+   - 해결: 루트/차트 컨테이너에 "측정 가능한 최소 크기"를 보장
+   ========================================================= */
+
+html,
+body,
+#root {
+  height: 100%;
+  min-height: 100%;
+  width: 100%;
+  min-width: 0;
+}
+
+body {
+  margin: 0;
+  min-width: 0;
+}
+
+/* ResponsiveContainer에 기본적으로 붙는 class */
+.recharts-responsive-container {
+  min-width: 0;
+  min-height: 240px; /* 필요하면 200~360 정도로 조절 */
+}
+
+/* 내부 wrapper 보정 (너비/높이 0으로 붕괴되는 케이스 방지) */
+.recharts-wrapper {
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0;
+  min-height: 0;
+}

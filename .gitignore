@@ -1,0 +1,27 @@
+# 1. 의존성 폴더 (용량이 커서 절대 올리면 안 됨)
+node_modules/
+dist/
+build/
+
+# 2. 파이썬 관련 (임시 파일들)
+__pycache__/
+*.py[cod]
+.venv/
+env/
+venv/
+
+# 3. 운영체제/에디터 잡동사니
+.DS_Store
+.idea/
+
+# 4. 환경 변수 (비밀번호 같은 거라 올리면 해킹당함)
+.env
+
+.logs/
+.data/
+.vscode/
+.venv/
+__pycache__/
+*.pyc
+pids.json
+*.log

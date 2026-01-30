@@ -1,0 +1,28 @@
+{
+    "feed": {
+        "flow_m3h": 10.0,
+        "pressure_bar": 15.0,
+        "temperature_c": 25.0,
+        "species_mgL":  {
+            "NA": 2300,
+            "CI": 3600,
+            "Ca": 120,
+            "SO4": 250,
+            "HCO3": 90
+        }
+    },
+    "params":   {
+        "area_m2": 100.0,
+        "A_Lmh_bar": 5.0,
+        "B_Lmh": 0.05,
+        "rejection":    {
+            "NA": 0.98,
+            "CI": 0.98,
+            "Ca": 0.995,
+            "SO4": 0.995,
+            "HCO3": 0.98
+        },
+        "recovery_frac": 0.45,
+        "dp_bar": 0.5
+    }
+}

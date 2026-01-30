@@ -1,0 +1,187 @@
+=========================================================
+AquaNova 전체 코드 의존성 분석 보고서
+생성 일시: <built-in function times>
+=========================================================
+
+[1] Assets
+    - 설명: 사용 폰트 파일
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\.assets\fonts\NotoSans-Variable.ttf
+
+[2] Executable
+    - 설명: Python 가상환경 실행 파일
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\venv\Scripts\python.exe
+
+[3] Frontend (UI)
+    - 설명: UI 프로젝트 설정 파일
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\ui\package.json
+
+[4] Frontend (UI)
+    - 설명: Vite 번들러 설정
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\ui\vite.config.js
+
+[5] Launcher Script
+    - 설명: 메인 실행 스크립트
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\run_aquanova.ps1
+
+[6] Python Code (Entry)
+    - 설명: API 서버 엔트리포인트 (app.main:app)
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\main.py
+
+[7] Python Code (Internal)
+    - 설명: Imported by main.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\api\v1\api.py
+
+[8] Python Code (Internal)
+    - 설명: Imported by api.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\api\v1\health.py
+
+[9] Python Code (Internal)
+    - 설명: Imported by api.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\api\v1\hrro.py
+
+[10] Python Code (Internal)
+    - 설명: Imported by api.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\api\v1\reports.py
+
+[11] Python Code (Internal)
+    - 설명: Imported by api.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\api\v1\routers\__init__.py
+
+[12] Python Code (Internal)
+    - 설명: Imported by simulation.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\api\v1\schemas.py
+
+[13] Python Code (Internal)
+    - 설명: Imported by api.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\api\v1\simulation.py
+
+[14] Python Code (Internal)
+    - 설명: Imported by api.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\api\v1\user_settings.py
+
+[15] Python Code (Internal)
+    - 설명: Imported by main.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\core\config.py
+
+[16] Python Code (Internal)
+    - 설명: Imported by reports.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\core\fs.py
+
+[17] Python Code (Internal)
+    - 설명: Imported by simulation.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\data\membranes.py
+
+[18] Python Code (Internal)
+    - 설명: Imported by reports.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\db\models\__init__.py
+
+[19] Python Code (Internal)
+    - 설명: Imported by session.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\db\models\base.py
+
+[20] Python Code (Internal)
+    - 설명: Imported by tasks.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\db\models\report_job.py
+
+[21] Python Code (Internal)
+    - 설명: Imported by simulation.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\db\models\user_settings.py
+
+[22] Python Code (Internal)
+    - 설명: Imported by simulation.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\db\session.py
+
+[23] Python Code (Internal)
+    - 설명: Imported by tasks.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\reports\templates\cover.py
+
+[24] Python Code (Internal)
+    - 설명: Imported by tasks.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\reports\templates\stage_metrics.py
+
+[25] Python Code (Internal)
+    - 설명: Imported by tasks.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\reports\templates\summary.py
+
+[26] Python Code (Internal)
+    - 설명: Imported by specs.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\membranes.py
+
+[27] Python Code (Internal)
+    - 설명: Imported by hrro.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\__init__.py
+
+[28] Python Code (Internal)
+    - 설명: Imported by simulation.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\engine.py
+
+[29] Python Code (Internal)
+    - 설명: Imported by engine.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\models.py
+
+[30] Python Code (Internal)
+    - 설명: Imported by __init__.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\solvers.py
+
+[31] Python Code (Internal)
+    - 설명: Imported by engine.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\solvers\hrro.py
+
+[32] Python Code (Internal)
+    - 설명: Imported by engine.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\solvers\steady_state.py
+
+[33] Python Code (Internal)
+    - 설명: Imported by steady_state.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\specs.py
+
+[34] Python Code (Internal)
+    - 설명: Imported by steady_state.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\strategies\__init__.py
+
+[35] Python Code (Internal)
+    - 설명: Imported by __init__.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\strategies\base.py
+
+[36] Python Code (Internal)
+    - 설명: Imported by __init__.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\strategies\mf.py
+
+[37] Python Code (Internal)
+    - 설명: Imported by __init__.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\strategies\nf.py
+
+[38] Python Code (Internal)
+    - 설명: Imported by __init__.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\strategies\ro.py
+
+[39] Python Code (Internal)
+    - 설명: Imported by __init__.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\strategies\uf.py
+
+[40] Python Code (Internal)
+    - 설명: Imported by __init__.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\simulation\utils.py
+
+[41] Python Code (Internal)
+    - 설명: Imported by reports.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\tasks.py
+
+[42] Python Code (Internal)
+    - 설명: Imported by steady_state.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\transport.py
+
+[43] Python Code (Internal)
+    - 설명: Imported by simulation.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\units.py
+
+[44] Python Code (Internal)
+    - 설명: Imported by simulation.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\units_apply_out.py
+
+[45] Python Code (Internal)
+    - 설명: Imported by engine.py
+    - 경로: C:\Users\a\Desktop\프로젝트\AquaNova\code\app\services\water_chemistry.py
+
+=========================================================
+Total Files Found: 45
