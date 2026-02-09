@@ -160,7 +160,7 @@ def task_generate_report(
     try:
         job = db.get(ReportJob, job_uuid)
         if job:
-            job.status = ReportStatus.running
+            job.status = ReportStatus.started  # ✅ running -> started
             job.started_at = datetime.now(timezone.utc)
             job.error_message = None
             db.add(job)

@@ -55,25 +55,32 @@ def _rows_from_stage_metrics(stage_metrics: List[Any] | None) -> List[List[str]]
     for m0 in stage_metrics:
         m = _as_dict(m0)
 
-        # 1. Stage Index (Schema: stage, Model: stage_index)
         stg = _get_val(m, ["stage", "stage_index", "idx"])
+        mtype = _get_val(m, ["module_type", "type", "module", "unit_op"])
 
-        # 2. Flux (Schema: flux_lmh, Model: avg_flux_lmh, Legacy: jw_avg_lmh)
         jw = _get_val(m, ["flux_lmh", "avg_flux_lmh", "jw_avg_lmh"])
-
-        # 3. Pressure In (Schema: p_in_bar, Model: pressure_in, Legacy: pin, pin_bar)
         pin = _get_val(m, ["p_in_bar", "pressure_in", "pin", "pin_bar"])
-
-        # 4. Pressure Out (Schema: p_out_bar, Model: pressure_out, Legacy: pout, pout_bar)
         pout = _get_val(m, ["p_out_bar", "pressure_out", "pout", "pout_bar"])
-
-        # 5. SEC (Schema/Model: sec_kwhm3, Legacy: sec_kwh_m3)
         sec = _get_val(m, ["sec_kwhm3", "sec_kwh_m3"])
+
+        # ΔP: 명시 키가 없으면 pin-pout로 계산
+        dp = _get_val(m, ["dp_bar", "delta_p_bar", "deltaP_bar"])
+        if (
+            dp is None
+            and isinstance(pin, (int, float))
+            and isinstance(pout, (int, float))
+        ):
+            dp = float(pin) - float(pout)
 
         stage_lbl = (
             str(int(stg))
             if isinstance(stg, (int, float))
             else (str(stg) if stg else "—")
+        )
+        type_lbl = (
+            str(mtype).upper()
+            if isinstance(mtype, str)
+            else (str(mtype) if mtype else "—")
         )
 
         rows.append(
@@ -81,15 +88,16 @@ def _rows_from_stage_metrics(stage_metrics: List[Any] | None) -> List[List[str]]
                 stg,
                 [
                     stage_lbl,
+                    type_lbl,
                     fmt_num(jw, 1),
                     fmt_num(pin, 2),
                     fmt_num(pout, 2),
+                    fmt_num(dp, 2),
                     fmt_num(sec, 3),
                 ],
             )
         )
 
-    # Stage 순서대로 정렬
     try:
         rows.sort(key=lambda x: (9999 if x[0] is None else float(x[0])))
     except Exception:
@@ -255,9 +263,11 @@ def draw_stage_metrics_page(
 
     headers = [
         "Stage",
-        f"Jw avg ({_u(units, 'flux', 'LMH')})",
+        "Type",
+        f"Jw/Flux ({_u(units, 'flux', 'LMH')})",
         f"Pin ({_u(units, 'pressure', 'bar')})",
         f"Pout ({_u(units, 'pressure', 'bar')})",
+        f"ΔP ({_u(units, 'pressure', 'bar')})",
         "SEC (kWh/m³)",
     ]
 
@@ -266,11 +276,13 @@ def draw_stage_metrics_page(
 
     total_w = x1 - x0
     col_ws = [
-        total_w * 0.14,
-        total_w * 0.24,
-        total_w * 0.21,
-        total_w * 0.21,
-        total_w * 0.20,
+        total_w * 0.10,  # Stage
+        total_w * 0.12,  # Type
+        total_w * 0.18,  # Flux
+        total_w * 0.15,  # Pin
+        total_w * 0.15,  # Pout
+        total_w * 0.12,  # dP
+        total_w * 0.18,  # SEC
     ]
 
     approx_h = (1 + len(rows)) * 16 + 20
@@ -297,7 +309,7 @@ def draw_stage_metrics_page(
             col_widths=col_ws,
             row_h=16,
             text_font=font,
-            text_size=9,
+            text_size=8,
         )
         - 10
     )
@@ -322,13 +334,23 @@ def draw_stage_metrics_page(
             metrics_list.append((stg, m))
 
     metrics_list.sort(key=lambda x: float(x[0]))
-
+    dp = []
     for stg, m in metrics_list:
         xs.append(stg)
-        flux.append(_get_val(m, ["flux_lmh", "avg_flux_lmh", "jw_avg_lmh"]))
-        pin.append(_get_val(m, ["p_in_bar", "pressure_in", "pin", "pin_bar"]))
-        pout.append(_get_val(m, ["p_out_bar", "pressure_out", "pout", "pout_bar"]))
-        sec.append(_get_val(m, ["sec_kwhm3", "sec_kwh_m3"]))
+        f = _get_val(m, ["flux_lmh", "avg_flux_lmh", "jw_avg_lmh"])
+        a = _get_val(m, ["p_in_bar", "pressure_in", "pin", "pin_bar"])
+        b = _get_val(m, ["p_out_bar", "pressure_out", "pout", "pout_bar"])
+        e = _get_val(m, ["sec_kwhm3", "sec_kwh_m3"])
+
+        flux.append(f)
+        pin.append(a)
+        pout.append(b)
+        sec.append(e)
+
+        d = _get_val(m, ["dp_bar", "delta_p_bar", "deltaP_bar"])
+        if d is None and isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            d = float(a) - float(b)
+        dp.append(d)
 
     if y - chart_h < 20 * mm:
         c.showPage()
@@ -360,9 +382,9 @@ def draw_stage_metrics_page(
         each_w,
         chart_h,
         xs=xs,
-        series=[(pin, "Pin"), (pout, "Pout")],
+        series=[(pin, "Pin"), (pout, "Pout"), (dp, "ΔP")],
         y_unit=_u(units, "pressure", "bar"),
-        title="Pin / Pout",
+        title="Pin / Pout / ΔP",
     )
 
     _plot_lines(
@@ -373,6 +395,6 @@ def draw_stage_metrics_page(
         chart_h,
         xs=xs,
         series=[(sec, "SEC")],
-        y_unit=_u(units, "sec", "kWh/m³"),
+        y_unit="kWh/m³",
         title="Stage SEC",
     )

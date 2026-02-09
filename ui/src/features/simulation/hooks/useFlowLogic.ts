@@ -1,7 +1,6 @@
-// ui\src\features\flow-builder\hooks\useFlowLogic.ts
 // ui/src/features/simulation/hooks/useFlowLogic.ts
-
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import type { DragEvent } from 'react';
 import {
   useNodesState,
   useEdgesState,
@@ -13,7 +12,12 @@ import {
 } from 'reactflow';
 
 import { runSimulation } from '@/api/simulation';
-import { SimulationRequest, FeedInput } from '@/api/types';
+import type {
+  SimulationRequest,
+  FeedInput as ApiFeedInput,
+  WaterChemistryInput,
+  IonCompositionInput,
+} from '@/api/types';
 
 import {
   UnitMode,
@@ -36,7 +40,9 @@ import {
   ROConfig,
   NFConfig,
   MFConfig,
+  UFConfig,
   convPress,
+  convFlux,
 } from '../model/types';
 
 import {
@@ -52,22 +58,112 @@ import {
   removeNode,
   LS_KEY,
   LS_SCNS,
-  toStagePayload, // ✅ 새로 만든 강력한 매핑 함수 사용
+  toStagePayload,
+  resolveProjectId,
 } from '../model/logic';
+
 import { defaultConfig, ensureUnitCfg } from '../FlowBuilder.utils';
 
 const SESSION_KEY = 'AQUANOVA_SESSION_V1';
 
+function hasAnyNumber(obj: Record<string, any> | null | undefined): boolean {
+  if (!obj) return false;
+  return Object.values(obj).some(
+    (v) => typeof v === 'number' && Number.isFinite(v),
+  );
+}
+
+/**
+ * Map UI ChemistryInput -> backend {chemistry, ions}
+ * - chemistry: WaterChemistryInput (scaling inputs)
+ * - ions: IonCompositionInput (Excel ions)
+ */
+function mapChemistryToBackend(ui: ChemistryInput | null | undefined): {
+  chemistry?: WaterChemistryInput | null;
+  ions?: IonCompositionInput | null;
+} {
+  if (!ui) return {};
+
+  const chemistry: WaterChemistryInput = {
+    alkalinity_mgL_as_CaCO3: ui.alkalinity_mgL_as_CaCO3 ?? null,
+    calcium_hardness_mgL_as_CaCO3: ui.calcium_hardness_mgL_as_CaCO3 ?? null,
+    sulfate_mgL: ui.sulfate_mgL ?? ui.so4_mgL ?? null,
+    barium_mgL: ui.barium_mgL ?? ui.ba_mgL ?? null,
+    strontium_mgL: ui.strontium_mgL ?? ui.sr_mgL ?? null,
+    silica_mgL_SiO2: ui.silica_mgL_SiO2 ?? ui.sio2_mgL ?? null,
+  };
+
+  const ions: IonCompositionInput = {
+    NH4: ui.nh4_mgL ?? null,
+    K: ui.k_mgL ?? null,
+    Na: ui.na_mgL ?? null,
+    Mg: ui.mg_mgL ?? null,
+    Ca: ui.ca_mgL ?? null,
+    Sr: ui.sr_mgL ?? null,
+    Ba: ui.ba_mgL ?? null,
+
+    // WAVE anions 구성
+    HCO3: ui.hco3_mgL ?? null,
+    NO3: ui.no3_mgL ?? null,
+    Cl: ui.cl_mgL ?? null,
+    F: ui.f_mgL ?? null,
+    SO4: ui.so4_mgL ?? ui.sulfate_mgL ?? null,
+    Br: ui.br_mgL ?? null,
+    PO4: ui.po4_mgL ?? null,
+    CO3: ui.co3_mgL ?? null,
+
+    // neutrals
+    CO2: ui.co2_mgL ?? null,
+    SiO2: ui.sio2_mgL ?? ui.silica_mgL_SiO2 ?? null,
+    B: ui.b_mgL ?? null,
+
+    // (선택) UI에 있다면
+    Fe: (ui as any).fe_mgL ?? null,
+    Mn: (ui as any).mn_mgL ?? null,
+  };
+
+  const chemistryOut = hasAnyNumber(chemistry as any) ? chemistry : null;
+  const ionsOut = hasAnyNumber(ions as any) ? ions : null;
+
+  return { chemistry: chemistryOut, ions: ionsOut };
+}
+
+function isEditableTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if ((el as any).isContentEditable) return true;
+  return false;
+}
+
 export function useFlowLogic() {
   const rfRef = useRef<ReactFlowInstance | null>(null);
+
+  // Stable initial endpoints
+  const INITIAL_NODES: Node<FlowData>[] = useMemo(
+    () => [
+      {
+        id: 'feed',
+        type: 'endpoint',
+        position: { x: 40, y: 160 },
+        data: { type: 'endpoint', role: 'feed', label: 'Feed' },
+      },
+      {
+        id: 'product',
+        type: 'endpoint',
+        position: { x: 900, y: 160 },
+        data: { type: 'endpoint', role: 'product', label: 'Product' },
+      },
+    ],
+    [],
+  );
 
   // [Session Load]
   const sessionData = useMemo(() => {
     try {
       const saved = sessionStorage.getItem(SESSION_KEY);
-      if (saved) {
-        return JSON.parse(saved);
-      }
+      if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error('Failed to load session', e);
     }
@@ -93,6 +189,7 @@ export function useFlowLogic() {
       tds_mgL: 2000,
       temperature_C: 25,
       ph: 7.0,
+      pressure_bar: 0.0,
     },
   );
 
@@ -114,21 +211,6 @@ export function useFlowLogic() {
   );
 
   // Nodes & Edges
-  const INITIAL_NODES: Node<FlowData>[] = [
-    {
-      id: 'feed',
-      type: 'endpoint',
-      position: { x: 40, y: 160 },
-      data: { type: 'endpoint', role: 'feed', label: 'Feed' },
-    },
-    {
-      id: 'product',
-      type: 'endpoint',
-      position: { x: 900, y: 160 },
-      data: { type: 'endpoint', role: 'product', label: 'Product' },
-    },
-  ];
-
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowData>(
     sessionData?.nodes ? ensureUnitCfg(sessionData.nodes) : INITIAL_NODES,
   );
@@ -155,9 +237,14 @@ export function useFlowLogic() {
   const [history, setHistory] = useState<{
     past: Snapshot[];
     future: Snapshot[];
-  }>({ past: [], future: [] });
+  }>({
+    past: [],
+    future: [],
+  });
 
-  // [Auto-Save]
+  // ---------------------------------------------------------------------------
+  // Auto-save session
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       const payload = {
@@ -198,7 +285,9 @@ export function useFlowLogic() {
     optErdEff,
   ]);
 
-  // --- Helpers ---
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
   const pushToast = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 1500);
@@ -211,7 +300,9 @@ export function useFlowLogic() {
     }));
   }, [nodes, edges]);
 
-  // --- Actions ---
+  // ---------------------------------------------------------------------------
+  // Undo / Redo
+  // ---------------------------------------------------------------------------
   const undo = useCallback(() => {
     setHistory((h) => {
       if (!h.past.length) return h;
@@ -239,32 +330,48 @@ export function useFlowLogic() {
     });
   }, [nodes, edges, setNodes, setEdges]);
 
+  // ---------------------------------------------------------------------------
+  // Selection
+  // ---------------------------------------------------------------------------
   const sel = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId) || null,
     [nodes, selectedNodeId],
   );
+
   const selUnit = useMemo(() => (isUnitNode(sel) ? sel : null), [sel]);
+
   const selEndpoint = useMemo(() => {
     if (!sel) return null;
     const d = sel.data as any;
-    if (d?.type === 'endpoint') {
+    if (d?.type === 'endpoint')
       return sel as Node<FlowData> & { data: EndpointData };
-    }
     return null;
   }, [sel]);
 
-  const onDragStartPalette = (k: UnitKind, ev: React.DragEvent) => {
+  const stageTypeHint = useMemo(() => {
+    if (selUnit) {
+      const k = (selUnit.data as UnitData).kind as UnitKind;
+      if (k === 'PUMP') return undefined;
+      return k;
+    }
+    return undefined;
+  }, [selUnit]);
+
+  // ---------------------------------------------------------------------------
+  // Palette drag/drop
+  // ---------------------------------------------------------------------------
+  const onDragStartPalette = useCallback((k: UnitKind, ev: DragEvent) => {
     ev.dataTransfer.setData('application/x-unitkind', k);
     ev.dataTransfer.effectAllowed = 'move';
-  };
+  }, []);
 
-  const onDragOver = useCallback((ev: React.DragEvent) => {
+  const onDragOver = useCallback((ev: DragEvent) => {
     ev.preventDefault();
     ev.dataTransfer.dropEffect = 'move';
   }, []);
 
   const onDrop = useCallback(
-    (ev: React.DragEvent) => {
+    (ev: DragEvent) => {
       ev.preventDefault();
       const kind = ev.dataTransfer.getData(
         'application/x-unitkind',
@@ -296,9 +403,12 @@ export function useFlowLogic() {
       setSelectedNodeId(id);
       setEditorOpen(true);
     },
-    [setNodes, pushHistory],
+    [pushHistory, setNodes],
   );
 
+  // ---------------------------------------------------------------------------
+  // Connect / Move / Delete edges
+  // ---------------------------------------------------------------------------
   const onConnect = useCallback(
     (params: Edge | Connection) => {
       pushHistory();
@@ -320,144 +430,139 @@ export function useFlowLogic() {
   const onNodeClick = useCallback((_e: any, n: Node<FlowData>) => {
     setSelectedNodeId(n.id);
     const d = n.data as any;
-    if (d?.type === 'endpoint' || d?.type === 'unit') {
-      setEditorOpen(true);
-    }
+    if (d?.type === 'endpoint' || d?.type === 'unit') setEditorOpen(true);
   }, []);
 
   const onNodeDragStop = useCallback(() => pushHistory(), [pushHistory]);
   const onEdgesDelete = useCallback(() => pushHistory(), [pushHistory]);
 
-  // Keyboard Shortcuts
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        e.shiftKey ? redo() : undo();
-        return;
+  // ---------------------------------------------------------------------------
+  // Toggle Units (convert feed + pressure + UF/MF flux inputs)
+  // ---------------------------------------------------------------------------
+  const toggleUnits = useCallback(
+    (next: UnitMode) => {
+      if (next === unitMode) return;
+
+      // Feed conversion
+      const feed2 = { ...feed };
+      feed2.flow_m3h =
+        unitMode === 'SI'
+          ? convFlow(feed2.flow_m3h, 'SI', next)
+          : convFlow(feed2.flow_m3h, 'US', next);
+
+      feed2.temperature_C =
+        unitMode === 'SI'
+          ? convTemp(feed2.temperature_C, 'SI', next)
+          : convTemp(feed2.temperature_C, 'US', next);
+
+      if (typeof feed2.pressure_bar === 'number') {
+        feed2.pressure_bar =
+          unitMode === 'SI'
+            ? convPress(feed2.pressure_bar, 'SI', next)
+            : convPress(feed2.pressure_bar, 'US', next);
       }
-      if (mod && e.key === 'Enter') {
-        e.preventDefault();
-        onRun();
-        return;
-      }
-      if (
-        (e.key === 'Delete' || e.key === 'Backspace') &&
-        selUnit &&
-        selUnit.id !== 'feed' &&
-        selUnit.id !== 'product'
-      ) {
-        e.preventDefault();
-        removeNode(selUnit.id, setNodes as SetNodesFn, setEdges as SetEdgesFn);
-        setSelectedNodeId(null);
-        setEditorOpen(false);
-        pushHistory();
-        return;
-      }
-      if (selUnit) {
-        const step = e.shiftKey ? 6 : 1;
-        if (
-          ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)
-        ) {
-          e.preventDefault();
-          const dx =
-            e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
-          const dy =
-            e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-          nudge(selUnit.id, dx, dy, setNodes as SetNodesFn);
-          return;
-        }
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, selUnit, setNodes, setEdges]);
+      setFeed(feed2);
 
-  // Derived
-  const chainCheck = useMemo<ChainOk | ChainErr>(
-    () => buildLinearChain(nodes, edges),
-    [nodes, edges],
-  );
-  const unitChain: UnitNodeRF[] = chainCheck.ok
-    ? (chainCheck.chain as UnitNodeRF[])
-    : [];
+      // Node conversions
+      setNodes((arr) =>
+        arr.map((n) => {
+          const d = n.data as any;
+          if (!d || d.type !== 'unit') return n;
 
-  const stageTypeHint = useMemo(() => {
-    if (selUnit) {
-      const k = (selUnit.data as UnitData).kind as UnitKind;
-      if (k === 'PUMP') return undefined;
-      return k === 'HRRO' ? 'RO' : k;
-    }
-    return undefined;
-  }, [selUnit]);
-
-  // Toggle Units
-  const toggleUnits = (next: UnitMode) => {
-    if (next === unitMode) return;
-
-    // Feed 변환
-    const feed2 = { ...feed };
-    feed2.flow_m3h =
-      unitMode === 'SI'
-        ? convFlow(feed2.flow_m3h, 'SI', next)
-        : convFlow(feed2.flow_m3h, 'US', next);
-    feed2.temperature_C =
-      unitMode === 'SI'
-        ? convTemp(feed2.temperature_C, 'SI', next)
-        : convTemp(feed2.temperature_C, 'US', next);
-    setFeed(feed2);
-
-    // 노드 설정값 변환
-    setNodes((arr) =>
-      arr.map((n) => {
-        const d = n.data as any;
-        if (!d || d.type !== 'unit') return n;
-
-        // HRRO
-        if (d.kind === 'HRRO') {
-          const c = d.cfg as HRROConfig;
-          const p = convPress(c.p_set_bar, unitMode, next);
-          return {
-            ...n,
-            data: { ...d, cfg: { ...c, p_set_bar: p } },
-          } as Node<FlowData>;
-        }
-
-        // RO/NF/MF/UF
-        if (['RO', 'NF', 'MF', 'UF'].includes(d.kind)) {
-          const c = d.cfg as ROConfig | NFConfig | MFConfig;
-          if (c.mode === 'pressure' && typeof c.pressure_bar === 'number') {
-            const p = convPress(c.pressure_bar, unitMode, next);
+          // HRRO pressure
+          if (d.kind === 'HRRO') {
+            const c = d.cfg as HRROConfig;
+            const p = convPress(c.p_set_bar, unitMode, next);
             return {
               ...n,
-              data: { ...d, cfg: { ...c, pressure_bar: p } },
+              data: { ...d, cfg: { ...c, p_set_bar: p } },
             } as Node<FlowData>;
           }
-        }
-        return n;
-      }),
-    );
-    setUnitMode(next);
-  };
 
-  /**
-   * ✅ [REFACTORED & FIXED] Simulation RUN
-   * 이제 데이터를 수동으로 조립하지 않고, logic.ts의 toStagePayload를 호출하여
-   * 107% 방지 패치가 적용된 데이터를 안전하게 보냅니다.
-   */
+          // RO/NF/MF pressures
+          if (['RO', 'NF', 'MF'].includes(d.kind)) {
+            const c = d.cfg as ROConfig | NFConfig | MFConfig;
+            if (c.mode === 'pressure' && typeof c.pressure_bar === 'number') {
+              const p = convPress(c.pressure_bar, unitMode, next);
+              return {
+                ...n,
+                data: { ...d, cfg: { ...c, pressure_bar: p } },
+              } as Node<FlowData>;
+            }
+          }
+
+          // UF flux conversions (LMH <-> gfd)
+          if (d.kind === 'UF') {
+            const c = d.cfg as UFConfig;
+            const filtrate =
+              typeof c.filtrate_flux_lmh_25C === 'number'
+                ? convFlux(c.filtrate_flux_lmh_25C, unitMode, next)
+                : c.filtrate_flux_lmh_25C;
+            const backwash =
+              typeof c.backwash_flux_lmh === 'number'
+                ? convFlux(c.backwash_flux_lmh, unitMode, next)
+                : c.backwash_flux_lmh;
+
+            return {
+              ...n,
+              data: {
+                ...d,
+                cfg: {
+                  ...c,
+                  filtrate_flux_lmh_25C: filtrate,
+                  backwash_flux_lmh: backwash,
+                },
+              },
+            } as Node<FlowData>;
+          }
+
+          // MF flux conversions
+          if (d.kind === 'MF') {
+            const c = d.cfg as MFConfig;
+            const filtrate =
+              typeof c.mf_filtrate_flux_lmh_25C === 'number'
+                ? convFlux(c.mf_filtrate_flux_lmh_25C, unitMode, next)
+                : c.mf_filtrate_flux_lmh_25C;
+            const backwash =
+              typeof c.mf_backwash_flux_lmh === 'number'
+                ? convFlux(c.mf_backwash_flux_lmh, unitMode, next)
+                : c.mf_backwash_flux_lmh;
+
+            return {
+              ...n,
+              data: {
+                ...d,
+                cfg: {
+                  ...c,
+                  mf_filtrate_flux_lmh_25C: filtrate,
+                  mf_backwash_flux_lmh: backwash,
+                },
+              },
+            } as Node<FlowData>;
+          }
+
+          return n;
+        }),
+      );
+
+      setUnitMode(next);
+    },
+    [feed, setFeed, setNodes, unitMode],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Simulation RUN (Unified)
+  // ---------------------------------------------------------------------------
   const onRun = useCallback(async () => {
-    console.log('🚀 [UI DEBUG] Simulation RUN Triggered');
     setLoading(true);
     setErr(null);
     setData(null);
     setChemSummary(null);
 
     try {
-      // 1. 유효성 검사 (체인 확인)
+      // chain check + auto repair
       let check = buildLinearChain(nodes, edges) as ChainOk | ChainErr;
       if (!check.ok) {
-        // 끊어진 부분이 있다면 자동으로 연결 시도 (UX 편의)
         const hypot = makeLinearEdges(nodes);
         const check2 = buildLinearChain(nodes, hypot);
         if (check2.ok) {
@@ -470,13 +575,19 @@ export function useFlowLogic() {
         }
       }
 
-      const unitNodes: UnitNodeRF[] = (check as ChainOk).chain as UnitNodeRF[];
-      if (unitNodes.length === 0) {
-        throw new Error('시뮬레이션할 스테이지가 없습니다.');
+      const unitNodes = (check as ChainOk).chain as UnitNodeRF[];
+      const stageChain = unitNodes.filter(
+        (n) => ((n.data as any).kind as UnitKind) !== 'PUMP',
+      );
+
+      if (stageChain.length === 0) {
+        throw new Error(
+          '시뮬레이션할 스테이지가 없습니다. (PUMP만 있거나 비어있음)',
+        );
       }
 
-      // 2. Feed 데이터 준비 (SI 단위로 변환)
-      const feedSI: FeedInput = {
+      // Feed -> SI
+      const feedSI: ApiFeedInput = {
         flow_m3h:
           unitMode === 'SI'
             ? feed.flow_m3h
@@ -487,36 +598,66 @@ export function useFlowLogic() {
             ? feed.temperature_C
             : convTemp(feed.temperature_C, 'US', 'SI'),
         ph: feed.ph,
+        pressure_bar:
+          typeof feed.pressure_bar === 'number'
+            ? unitMode === 'SI'
+              ? feed.pressure_bar
+              : convPress(feed.pressure_bar, 'US', 'SI')
+            : 0.0,
+
+        // WAVE 메타
+        water_type: (feed as any).water_type ?? null,
+        water_subtype: (feed as any).water_subtype ?? null,
+        turbidity_ntu: (feed as any).turbidity_ntu ?? null,
+        tss_mgL: (feed as any).tss_mgL ?? null,
+        sdi15: (feed as any).sdi15 ?? null,
+        toc_mgL: (feed as any).toc_mgL ?? null,
       };
 
-      // 3. Stages 데이터 준비 (logic.ts에 위임)
-      // ✅ 여기서 toStagePayload를 사용하므로 stop_recovery_pct가 확실히 포함됨
-      const stagesPayload = unitNodes.map((n) => toStagePayload(n, unitMode));
+      const globals = {
+        defaultMembraneModel: optMembrane,
+        pumpEff: optPumpEff,
+      };
 
-      // 4. 통합 Payload 생성
+      // Stage payloads (always SI)
+      const stagesPayload = stageChain.map((n) =>
+        toStagePayload(n, unitMode, globals),
+      );
+
+      // chemistry/ions
+      const { chemistry, ions } = mapChemistryToBackend(feedChemistry);
+
+      // unified payload
       const payload: SimulationRequest = {
         simulation_id: cryptoRandomId(),
-        project_id: 'default-project',
+        project_id: resolveProjectId(),
         scenario_name: scenarioName,
         feed: feedSI,
         stages: stagesPayload,
+        options: {
+          auto: optAuto,
+          membrane: optMembrane,
+          segments: optSegments,
+          pump_eff: optPumpEff,
+          erd_eff: optErdEff,
+        },
+        chemistry: chemistry ?? null,
+        ions: ions ?? null,
       };
 
-      // 5. API 호출 (단일 엔드포인트)
       const output = await runSimulation(payload);
 
-      // 6. 결과 처리
-      // 백엔드 결과를 UI 포맷에 맞게 변환 (Unit Mode 적용)
-      const outDisp = convertROutToDisplay(output, unitMode);
+      // normalize + convert for display unitMode
+      const outDisp = convertROutToDisplay(output as any, unitMode);
       setData(outDisp);
-      setChemSummary(output.chemistry ?? null);
+      setChemSummary((output as any).chemistry ?? null);
 
-      // 스테이지 노드에 결과 칩(Chips) 업데이트
+      // apply chips by stage order
       applyStageChips(
-        unitNodes.map((n) => n.id),
-        outDisp?.stage_metrics ?? null,
-        outDisp?.kpi,
-        outDisp?.unitMode ?? unitMode,
+        stageChain.map((n) => n.id),
+        (outDisp as any)?.stage_metrics ?? null,
+        (outDisp as any)?.kpi ?? null,
+        unitMode,
         setNodes as SetNodesFn,
       );
 
@@ -525,7 +666,9 @@ export function useFlowLogic() {
       console.error('❌ Simulation Error:', e);
       const msg =
         e?.response?.data?.detail ?? e?.message ?? '알 수 없는 오류 발생';
-      setErr(typeof msg === 'object' ? JSON.stringify(msg, null, 2) : msg);
+      setErr(
+        typeof msg === 'object' ? JSON.stringify(msg, null, 2) : String(msg),
+      );
     } finally {
       setLoading(false);
     }
@@ -533,15 +676,95 @@ export function useFlowLogic() {
     nodes,
     edges,
     feed,
+    feedChemistry,
     unitMode,
     scenarioName,
+    optAuto,
+    optMembrane,
+    optSegments,
+    optPumpEff,
+    optErdEff,
     pushToast,
     setNodes,
     setEdges,
   ]);
 
+  // ---------------------------------------------------------------------------
+  // Keyboard shortcuts (정석: ref로 최신 onRun 호출)
+  // ---------------------------------------------------------------------------
+  const onRunRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    onRunRef.current = onRun;
+  }, [onRun]);
+
+  const selUnitRef = useRef<typeof selUnit>(null);
+  useEffect(() => {
+    selUnitRef.current = selUnit;
+  }, [selUnit]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // 모달/인풋에서 이미 prevent 되었거나 입력 중이면 최대한 건드리지 않음
+      if (e.defaultPrevented) return;
+      if (isEditableTarget(e.target)) return;
+
+      const mod = e.ctrlKey || e.metaKey;
+
+      // Undo/Redo
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        e.shiftKey ? redo() : undo();
+        return;
+      }
+
+      // Run (Ctrl/Cmd + Enter)
+      if (mod && e.key === 'Enter') {
+        e.preventDefault();
+        onRunRef.current?.();
+        return;
+      }
+
+      const u = selUnitRef.current;
+
+      // Delete selected unit (except mandatory nodes)
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        u &&
+        u.id !== 'feed' &&
+        u.id !== 'product'
+      ) {
+        e.preventDefault();
+        removeNode(u.id, setNodes as SetNodesFn, setEdges as SetEdgesFn);
+        setSelectedNodeId(null);
+        setEditorOpen(false);
+        pushHistory();
+        return;
+      }
+
+      // Nudge by arrows
+      if (u) {
+        const step = e.shiftKey ? 6 : 1;
+        if (
+          ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)
+        ) {
+          e.preventDefault();
+          const dx =
+            e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+          const dy =
+            e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+          nudge(u.id, dx, dy, setNodes as SetNodesFn);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo, pushHistory, setNodes, setEdges]);
+
+  // ---------------------------------------------------------------------------
   // Save / Load (LocalStorage)
-  const saveLocal = () => {
+  // ---------------------------------------------------------------------------
+  const saveLocal = useCallback(() => {
     const payload: PersistModel = {
       nodes,
       edges,
@@ -558,9 +781,21 @@ export function useFlowLogic() {
     };
     localStorage.setItem(LS_KEY, JSON.stringify(payload));
     pushToast('Saved to browser');
-  };
+  }, [
+    nodes,
+    edges,
+    feed,
+    optAuto,
+    optMembrane,
+    optSegments,
+    optPumpEff,
+    optErdEff,
+    scenarioName,
+    feedChemistry,
+    pushToast,
+  ]);
 
-  const loadLocal = () => {
+  const loadLocal = useCallback(() => {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return pushToast('Nothing saved');
     try {
@@ -580,9 +815,21 @@ export function useFlowLogic() {
     } catch {
       pushToast('Load failed');
     }
-  };
+  }, [
+    pushToast,
+    setNodes,
+    setEdges,
+    setFeed,
+    setOptAuto,
+    setOptMembrane,
+    setOptSegments,
+    setOptPumpEff,
+    setOptErdEff,
+    setScenarioName,
+    setFeedChemistry,
+  ]);
 
-  const saveToLibrary = () => {
+  const saveToLibrary = useCallback(() => {
     const entry: PersistModel = {
       nodes,
       edges,
@@ -605,25 +852,55 @@ export function useFlowLogic() {
     localStorage.setItem(LS_SCNS, JSON.stringify(withNew));
     setLibraryItems(withNew);
     pushToast('Saved to Library');
-  };
+  }, [
+    nodes,
+    edges,
+    feed,
+    optAuto,
+    optMembrane,
+    optSegments,
+    optPumpEff,
+    optErdEff,
+    scenarioName,
+    feedChemistry,
+    pushToast,
+  ]);
 
-  const loadFromLibrary = (idx: number) => {
-    const e = libraryItems[idx];
-    if (!e) return;
-    setNodes(ensureUnitCfg(e.nodes));
-    setEdges(e.edges);
-    setFeed(e.feed);
-    setOptAuto(e.opt.auto);
-    setOptMembrane(e.opt.membrane as any);
-    setOptSegments(e.opt.segments);
-    setOptPumpEff(e.opt.pump_eff);
-    setOptErdEff(e.opt.erd_eff);
-    setScenarioName(e.name ?? 'Loaded Scenario');
-    setFeedChemistry(e.chemistry ?? DEFAULT_CHEMISTRY);
-    setLibraryOpen(false);
-    pushToast('Loaded from Library');
-    setTimeout(() => rfRef.current?.fitView?.({ padding: 0.2 }), 0);
-  };
+  const loadFromLibrary = useCallback(
+    (idx: number) => {
+      const e = libraryItems[idx];
+      if (!e) return;
+
+      setNodes(ensureUnitCfg(e.nodes));
+      setEdges(e.edges);
+      setFeed(e.feed);
+      setOptAuto(e.opt.auto);
+      setOptMembrane(e.opt.membrane as any);
+      setOptSegments(e.opt.segments);
+      setOptPumpEff(e.opt.pump_eff);
+      setOptErdEff(e.opt.erd_eff);
+      setScenarioName(e.name ?? 'Loaded Scenario');
+      setFeedChemistry(e.chemistry ?? DEFAULT_CHEMISTRY);
+      setLibraryOpen(false);
+      pushToast('Loaded from Library');
+      setTimeout(() => rfRef.current?.fitView?.({ padding: 0.2 }), 0);
+    },
+    [
+      libraryItems,
+      setNodes,
+      setEdges,
+      setFeed,
+      setOptAuto,
+      setOptMembrane,
+      setOptSegments,
+      setOptPumpEff,
+      setOptErdEff,
+      setScenarioName,
+      setFeedChemistry,
+      setLibraryOpen,
+      pushToast,
+    ],
+  );
 
   const resetAll = useCallback(() => {
     if (window.confirm('정말 모든 작업을 초기화하시겠습니까?')) {
@@ -639,21 +916,25 @@ export function useFlowLogic() {
       setEditorOpen(false);
       setTimeout(() => rfRef.current?.fitView?.({ padding: 0.2 }), 0);
     }
-  }, [setNodes, setEdges, INITIAL_NODES]);
+  }, [INITIAL_NODES, setNodes, setEdges]);
 
   return {
     rfRef,
+
     unitMode,
     setUnitMode,
     scenarioName,
     setScenarioName,
+
     libraryOpen,
     setLibraryOpen,
     libraryItems,
+
     feed,
     setFeed,
     feedChemistry,
     setFeedChemistry,
+
     optAuto,
     setOptAuto,
     optMembrane,
@@ -664,31 +945,40 @@ export function useFlowLogic() {
     setOptPumpEff,
     optErdEff,
     setOptErdEff,
+
     nodes,
     setNodes,
     onNodesChange,
     edges,
     setEdges,
     onEdgesChange,
+
     selectedNodeId,
     setSelectedNodeId,
+
     loading,
     err,
+
     data,
     chemSummary,
+
     editorOpen,
     setEditorOpen,
     optionsOpen,
     setOptionsOpen,
     toast,
+
     canUndo: history.past.length > 0,
     canRedo: history.future.length > 0,
+
     selEndpoint,
     selUnit,
     stageTypeHint,
+
     pushToast,
     undo,
     redo,
+
     onDragStartPalette,
     onDragOver,
     onDrop,
@@ -696,8 +986,10 @@ export function useFlowLogic() {
     onNodeClick,
     onNodeDragStop,
     onEdgesDelete,
+
     toggleUnits,
     onRun,
+
     saveLocal,
     loadLocal,
     saveToLibrary,

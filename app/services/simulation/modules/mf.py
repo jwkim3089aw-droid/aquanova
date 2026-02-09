@@ -1,96 +1,148 @@
-# app\services\simulation\modules\mf.py
+# app/services/simulation/modules/mf.py
+# ✅ MF Physics + simple TMP model
+# ✅ "Cp 대신 permeate/product 정의"를 chemistry["streams"]로 명시 (엔진 SSOT 연동)
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
 from app.services.simulation.modules.base import SimulationModule
 from app.api.v1.schemas import StageConfig, FeedInput, StageMetric, ModuleType
 
 
+def _f(v: Any, default: float) -> float:
+    try:
+        if v is None:
+            return float(default)
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(float(x), hi))
+
+
 class MFModule(SimulationModule):
     """
-    [MF 모듈]
-    - UF와 유사하나 더 큰 기공(Pore Size)을 가짐
-    - 더 높은 투수율(Permeability) 및 Flux 특성 반영
-    - 염 제거율 0% (SS, 박테리아 제거용)
+    [MF Module]
+    - UF보다 큰 기공 → 더 높은 permeability/flux
+    - TDS 제거율은 사실상 0% (SS/박테리아 제거 목적)
+    - chemistry["streams"]로 permeate/concentrate/feed 정의를 명시
     """
 
     def compute(self, config: StageConfig, feed: FeedInput) -> StageMetric:
-        # 1. 입력 파라미터 (MF 특화 기본값 적용)
-        feed_flow = feed.flow_m3h
-        # MF는 보통 모듈당 면적이 큽니다 (기본값 60m2 가정)
-        total_area = config.elements * (config.membrane_area_m2 or 60.0)
+        feed_flow = _f(getattr(feed, "flow_m3h", None), 0.0)
+        cf_tds = _f(getattr(feed, "tds_mgL", None), 0.0)
+        temp_c = _f(getattr(feed, "temperature_C", None), 25.0)
 
-        # 운전 Flux (설정값 없으면 80 LMH, 역세척은 2배)
-        flux_lmh = config.flux_lmh or 80.0
-        bw_flux_lmh = config.backwash_flux_lmh or (flux_lmh * 2.0)
+        elements = max(1, int(_f(getattr(config, "elements", None), 1)))
+        area_per_el = _f(getattr(config, "membrane_area_m2", None), 60.0)
+        total_area = max(1e-9, elements * max(1e-9, area_per_el))
 
-        # 주기 설정
-        filt_min = config.filtration_cycle_min or 20.0
-        bw_sec = config.backwash_duration_sec or 60.0
+        flux_lmh = _f(getattr(config, "flux_lmh", None), 80.0)
+        bw_flux_lmh = _f(getattr(config, "backwash_flux_lmh", None), flux_lmh * 2.0)
 
-        # 유지관리 손실 계수 (CIP, CEB 등을 포괄적으로 2%로 가정)
-        # 더 정밀한 계산이 필요하면 UFModule처럼 일별 시간을 계산할 수도 있으나,
-        # 여기서는 StageMetric 스키마에 맞춰 핵심 결과만 산출합니다.
-        cip_loss_factor = 0.98
+        filt_min = _f(getattr(config, "filtration_cycle_min", None), 20.0)
+        bw_sec = _f(getattr(config, "backwash_duration_sec", None), 60.0)
 
-        # 2. 시간 밸런스 (Cycle Analysis)
-        cycle_time_min = filt_min + (bw_sec / 60.0)
-        cycles_per_hour = 60.0 / cycle_time_min
+        filt_min = max(0.1, filt_min)
+        bw_min = max(0.0, bw_sec / 60.0)
 
-        filt_time_per_hour_min = cycles_per_hour * filt_min
-        bw_time_per_hour_min = cycles_per_hour * (bw_sec / 60.0)
+        # 유지관리 손실(CIP/CEB 등) - 기본 2% 손실
+        cip_loss_factor = _f(getattr(config, "mf_cip_loss_factor", None), 0.98)
+        cip_loss_factor = _clamp(cip_loss_factor, 0.7, 1.0)
 
-        # 3. 물량 밸런스 (Mass Balance)
-        gross_prod_m3h = (flux_lmh * total_area) / 1000.0
+        # Cycle fractions
+        cycle_time_min = max(1e-6, filt_min + bw_min)
+        filt_frac = filt_min / cycle_time_min
+        bw_frac = bw_min / cycle_time_min
 
-        # [Reality Check] Feed Flow보다 많이 생산할 수 없음
-        if gross_prod_m3h > feed_flow:
-            gross_prod_m3h = feed_flow
-            # 실제 가능한 Flux로 역산
-            flux_lmh = (gross_prod_m3h * 1000.0) / total_area
+        gross_prod_rate_m3h = (flux_lmh * total_area) / 1000.0
+        if feed_flow > 0 and gross_prod_rate_m3h > feed_flow:
+            gross_prod_rate_m3h = feed_flow
+            flux_lmh = (gross_prod_rate_m3h * 1000.0) / total_area
 
-        # 역세척 소모량
-        bw_flow_rate_m3h = (bw_flux_lmh * total_area) / 1000.0
-        bw_loss_m3h = bw_flow_rate_m3h * (bw_time_per_hour_min / 60.0)
+        bw_rate_m3h = (bw_flux_lmh * total_area) / 1000.0
 
-        # 순 생산량 (Net Production)
         net_prod_m3h = (
-            gross_prod_m3h * (filt_time_per_hour_min / 60.0) - bw_loss_m3h
+            gross_prod_rate_m3h * filt_frac - bw_rate_m3h * bw_frac
         ) * cip_loss_factor
+        net_prod_m3h = max(0.0, net_prod_m3h)
+        if feed_flow > 0 and net_prod_m3h > feed_flow:
+            net_prod_m3h = feed_flow
 
-        if net_prod_m3h < 0:
-            net_prod_m3h = 0.0
+        recovery_pct = (net_prod_m3h / feed_flow * 100.0) if feed_flow > 1e-12 else 0.0
+        qc_m3h = max(0.0, feed_flow - net_prod_m3h)
 
-        # 회수율 (Recovery)
-        recovery_pct = (net_prod_m3h / feed_flow) * 100.0 if feed_flow > 0 else 0.0
+        # TMP model (very high permeability)
+        # permeability @25C (LMH/bar)
+        permeability_25c = _f(
+            getattr(config, "mf_permeability_25c_lmh_bar", None), 500.0
+        )
+        # simple temp correction (optional)
+        temp_corr = 1.0 + 0.025 * (temp_c - 25.0)
+        temp_corr = _clamp(temp_corr, 0.5, 2.0)
+        permeability = max(1e-9, permeability_25c * temp_corr)
 
-        # 4. 압력 계산 (TMP)
-        # MF는 투수율이 매우 높음 (Permeability: 500 LMH/bar @ 25C)
-        temp_corr = 1.0 + 0.025 * (feed.temperature_C - 25.0)
-        permeability_25c = 500.0
-        permeability_corr = permeability_25c * temp_corr
+        tmp_bar = flux_lmh / permeability
+        tmp_bar = max(0.0, tmp_bar)
 
-        tmp_bar = flux_lmh / permeability_corr
+        p_out = _f(getattr(config, "mf_p_out_bar", None), 0.5)
+        header_loss = _f(getattr(config, "mf_header_loss_bar", None), 0.0)
+        p_in = p_out + tmp_bar + header_loss
 
-        # P_in = P_out + TMP
-        p_out = 0.5
-        p_in = p_out + tmp_bar
+        pump_eff = _f(getattr(config, "pump_eff", None), 0.75)
+        pump_eff = _clamp(pump_eff, 0.2, 0.95)
 
-        # 5. 결과 반환
+        power_kw = (
+            (feed_flow * p_in) / 36.0 / pump_eff if feed_flow > 0 and p_in > 0 else 0.0
+        )
+        sec = power_kw / net_prod_m3h if net_prod_m3h > 1e-12 else 0.0
+
+        chem: Dict[str, Any] = {
+            "streams": {
+                "feed": {"flow_m3h": float(feed_flow), "tds_mgL": float(cf_tds)},
+                "permeate": {
+                    "flow_m3h": float(net_prod_m3h),
+                    "tds_mgL": float(cf_tds),
+                    "definition": "MF permeate (TDS ~ unchanged)",
+                },
+                "concentrate": {
+                    "flow_m3h": float(qc_m3h),
+                    "tds_mgL": float(cf_tds),
+                    "definition": "MF waste/backwash (TDS ~ unchanged)",
+                },
+            },
+            "model": {
+                "temp_C": float(temp_c),
+                "permeability_25c_lmh_bar": float(permeability_25c),
+                "temp_corr": float(temp_corr),
+                "permeability_lmh_bar": float(permeability),
+                "tmp_bar": float(tmp_bar),
+                "filtration_min": float(filt_min),
+                "backwash_min": float(bw_min),
+                "filt_frac": float(filt_frac),
+                "bw_frac": float(bw_frac),
+                "cip_loss_factor": float(cip_loss_factor),
+                "net_prod_m3h": float(net_prod_m3h),
+            },
+        }
+
         return StageMetric(
-            stage=1,
+            stage=0,  # engine에서 overwrite
             module_type=ModuleType.MF,
-            # KPI
             recovery_pct=round(recovery_pct, 2),
             flux_lmh=round(flux_lmh, 1),
-            ndp_bar=round(tmp_bar, 2),  # TMP
-            sec_kwhm3=0.04,  # 초저압 운전
-            # Pressures
-            p_in_bar=round(p_in, 2),
-            p_out_bar=p_out,
-            # Mass Balance
-            Qf=feed_flow,
-            Qp=net_prod_m3h,
-            Qc=feed_flow - net_prod_m3h,
-            # Chemistry (제거 없음)
-            Cf=feed.tds_mgL,
-            Cp=feed.tds_mgL,
-            Cc=feed.tds_mgL,
+            ndp_bar=round(tmp_bar, 3),  # TMP를 ndp_bar에 매핑
+            sec_kwhm3=round(sec, 4),
+            p_in_bar=round(p_in, 3),
+            p_out_bar=round(p_out, 3),
+            Qf=round(feed_flow, 6),
+            Qp=round(net_prod_m3h, 6),
+            Qc=round(qc_m3h, 6),
+            Cf=round(cf_tds, 6),
+            Cp=round(cf_tds, 6),  # fallback
+            Cc=round(cf_tds, 6),  # fallback
+            chemistry=chem,
         )

@@ -1,12 +1,13 @@
-// src/features/flow-builder/model/types.ts
-// AquaNova FlowBuilder — Type Definitions & Utilities
+// ui\src\features\simulation\model\types.ts
+// ui/src/features/simulation/model/types.ts
+// AquaNova FlowBuilder — Types & Utilities
 
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import type { Node, Edge } from 'reactflow';
-import type { TimeSeriesPoint } from '../../../api/types'; // Backend Contract
+import type { TimeSeriesPoint } from '@/api/types';
 
 // ==========================================================
-// 1. Core Configuration Types (Membranes & Units)
+// 1) Core Unit Types
 // ==========================================================
 
 export type UnitKind = 'RO' | 'NF' | 'UF' | 'MF' | 'HRRO' | 'PUMP';
@@ -14,14 +15,16 @@ export type UnitKind = 'RO' | 'NF' | 'UF' | 'MF' | 'HRRO' | 'PUMP';
 export type BaseMembraneConfig = {
   membrane_mode?: 'catalog' | 'custom';
   membrane_model?: string;
+
+  // custom: recommended "per-element area(m2)" consistent with backend guidance
   custom_area_m2?: number;
 
-  // Custom Physics
+  // custom physics
   custom_A_lmh_bar?: number;
   custom_B_lmh?: number;
   custom_salt_rejection_pct?: number;
 
-  // Integrated Pump
+  // integrated pump (UI only; not a backend stage)
   enable_pump?: boolean;
   pump_pressure_bar?: number;
   pump_efficiency_pct?: number;
@@ -33,22 +36,8 @@ export type ROConfig = BaseMembraneConfig & {
   pressure_bar?: number;
   recovery_target_pct?: number;
 
-  // Details
-  ro_n_stages?: number;
-  ro_flow_factor?: number;
-  ro_temp_mode?: 'Design' | 'Operating';
-  ro_temp_C?: number;
-  ro_pass_permeate_back_pressure_bar?: number;
-  ro_stage_pv_per_stage?: number;
-  ro_stage_els_per_pv?: number;
-  ro_stage_element_type?: string;
-  ro_stage_total_els_per_stage?: number;
-  ro_stage_pre_delta_p_bar?: number;
-  ro_stage_back_pressure_bar?: number;
-  ro_stage_boost_press_bar?: number | null;
-  ro_stage_feed_press_bar?: number;
-  ro_stage_percent_conc_to_feed_pct?: number;
-  ro_stage_flow_factor?: number;
+  // (legacy/optional fields kept)
+  [k: string]: any;
 };
 
 export type NFConfig = BaseMembraneConfig & {
@@ -57,48 +46,19 @@ export type NFConfig = BaseMembraneConfig & {
   pressure_bar?: number;
   recovery_target_pct?: number;
 
-  // Details
-  nf_temp_mode?: 'Design' | 'Operating';
-  nf_temp_C?: number;
-  nf_pass_permeate_back_pressure_bar?: number;
-  nf_design_flux_lmh_25C?: number;
-  nf_max_flux_lmh?: number;
-  nf_rejection_divalent_pct?: number;
-  nf_rejection_monovalent_pct?: number;
-  nf_rejection_toc_pct?: number;
-  nf_max_delta_p_bar?: number;
-  nf_max_feed_pressure_bar?: number;
-  nf_max_feed_flow_m3h?: number;
-  nf_stage_pv_per_stage?: number;
-  nf_stage_els_per_pv?: number;
-  nf_stage_element_type?: string;
-  nf_stage_total_els_per_stage?: number;
-  nf_feed_flow_m3h?: number;
-  nf_permeate_flow_m3h?: number;
-  nf_flux_lmh_25C?: number;
-  nf_salt_rejection_pct?: number;
-  // ... (Other specific NF params omitted for brevity, but can be added back if needed)
+  [k: string]: any;
 };
 
 export type UFConfig = BaseMembraneConfig & {
   elements: number;
 
-  // Flux & Flow
   filtrate_flux_lmh_25C?: number;
   backwash_flux_lmh?: number;
 
-  // Cycle Intervals
   filtration_duration_min?: number;
   uf_backwash_duration_s?: number;
 
-  // Details
-  uf_feed_flow_m3h?: number;
-  ceb_flux_lmh?: number;
-  acid_ceb_interval_h?: number;
-  alkali_ceb_interval_h?: number;
-  cip_interval_d?: number;
-  uf_module_model?: string;
-  pump_eff?: number;
+  [k: string]: any;
 };
 
 export type MFConfig = BaseMembraneConfig & {
@@ -107,55 +67,54 @@ export type MFConfig = BaseMembraneConfig & {
   pressure_bar?: number;
   recovery_target_pct?: number;
 
-  // Cycle
   mf_filtration_duration_min?: number;
   mf_backwash_duration_s?: number;
   mf_filtrate_flux_lmh_25C?: number;
   mf_backwash_flux_lmh?: number;
 
-  // Details
-  mf_design_flux_lmh_25C?: number;
-  mf_operating_tmp_bar?: number;
-  mf_module_model?: string;
+  [k: string]: any;
 };
 
 export type HRROConfig = BaseMembraneConfig & {
   elements: number;
+
+  // pressure setpoint (bar in SI mode; psi in US mode)
   p_set_bar: number;
+
   recirc_flow_m3h: number;
   bleed_m3h: number;
   loop_volume_m3: number;
-  makeup_tds_mgL: number | null;
+
   timestep_s: number;
   max_minutes: number;
+
   stop_permeate_tds_mgL: number | null;
   stop_recovery_pct: number | null;
 
-  // Advanced Inputs
-  mass_transfer?: {
-    crossflow_velocity_m_s?: number;
-    recirc_flow_m3h?: number;
-    feed_channel_area_m2?: number;
-    rho_kg_m3?: number;
-    mu_pa_s?: number;
-    diffusivity_m2_s?: number;
-    cp_exp_max?: number;
-    cp_rel_tol?: number;
-    cp_abs_tol_lmh?: number;
-    cp_relax?: number;
-    cp_max_iter?: number;
-    [k: string]: any;
-  };
+  // ===== HRRO Excel Design Inputs =====
+  hrro_engine?: 'excel_only' | 'excel_physics';
+  hrro_excel_only_cp_mode?: 'min_model' | 'none' | 'fixed_rejection';
+  hrro_excel_only_fixed_rejection_pct?: number;
+  hrro_excel_only_min_model_rejection_pct?: number;
 
-  spacer?: {
-    thickness_mm?: number;
-    filament_diameter_mm?: number;
-    mesh_size_mm?: number;
-    voidage?: number;
-    voidage_fallback?: number;
-    hydraulic_diameter_m?: number;
-    [k: string]: any;
-  };
+  element_inch?: number;
+  vessel_count?: number;
+  elements_per_vessel?: number;
+
+  feed_flow_m3h?: number;
+  ccro_recovery_pct?: number;
+  pf_feed_ratio_pct?: number;
+  pf_recovery_pct?: number;
+  cc_recycle_m3h_per_pv?: number;
+  membrane_area_m2_per_element?: number;
+
+  pump_eff?: number;
+
+  // advanced inputs (passthrough)
+  mass_transfer?: Record<string, any>;
+  spacer?: Record<string, any>;
+
+  [k: string]: any;
 };
 
 export type PumpConfig = {
@@ -168,7 +127,7 @@ export type OLConfig = ROConfig | NFConfig | UFConfig | MFConfig;
 export type AnyUnitConfig = OLConfig | HRROConfig;
 
 // ==========================================================
-// 2. Flow Nodes & Data Structures
+// 2) Flow Nodes
 // ==========================================================
 
 export type Chip = {
@@ -194,26 +153,8 @@ export type EndpointData = Extract<FlowData, { type: 'endpoint' }>;
 
 export type Snapshot = { nodes: Node<FlowData>[]; edges: Edge[] };
 
-export type NodeKind =
-  | 'FEED'
-  | 'PRODUCT'
-  | 'RO'
-  | 'NF'
-  | 'UF'
-  | 'MF'
-  | 'HRRO'
-  | 'MBR'
-  | 'PUMP';
-export type StageKind = 'RO' | 'NF' | 'UF' | 'MF';
-
-export type NodeData = {
-  kind: NodeKind;
-  type?: StageKind;
-  label?: string;
-  cfg?: any;
-};
-
 export type UnitMode = 'SI' | 'US';
+
 export type UnitNode = Node<FlowData> & { data: UnitData };
 export type UnitNodeRF = UnitNode;
 
@@ -224,12 +165,16 @@ export type SetNodesFn = Dispatch<SetStateAction<Node<FlowData>[]>>;
 export type SetEdgesFn = Dispatch<SetStateAction<Edge[]>>;
 
 // ==========================================================
-// 3. Chemistry Types
+// 3) Chemistry UI Model (superset)
+// - UI keeps user-friendly keys (xxx_mgL), we map -> backend chemistry/ions in useFlowLogic
 // ==========================================================
 
 export type ChemistryInput = {
+  // scaling inputs
   alkalinity_mgL_as_CaCO3: number | null;
   calcium_hardness_mgL_as_CaCO3: number | null;
+
+  // ions (mg/L)
   nh4_mgL?: number | null;
   k_mgL?: number | null;
   na_mgL?: number | null;
@@ -237,25 +182,28 @@ export type ChemistryInput = {
   ca_mgL?: number | null;
   sr_mgL?: number | null;
   ba_mgL?: number | null;
-  fe_mgL?: number | null;
-  mn_mgL?: number | null;
+
   hco3_mgL?: number | null;
-  no3_mgL?: number | null;
+  no3_mgL?: number | null; // backend is NO2; keep UI NO3 as-is
   cl_mgL?: number | null;
   f_mgL?: number | null;
   so4_mgL?: number | null;
   br_mgL?: number | null;
   po4_mgL?: number | null;
+
   co3_mgL?: number | null;
-  sio2_mgL?: number | null;
-  b_mgL?: number | null;
   co2_mgL?: number | null;
 
-  // Legacy support
+  sio2_mgL?: number | null;
+  b_mgL?: number | null;
+
+  // legacy support / convenience
   sulfate_mgL?: number | null;
   barium_mgL?: number | null;
   strontium_mgL?: number | null;
   silica_mgL_SiO2?: number | null;
+
+  [k: string]: any;
 };
 
 export type ChemistrySI = {
@@ -267,6 +215,7 @@ export type ChemistrySI = {
   baso4_si: number | null;
   srso4_si: number | null;
   sio2_si: number | null;
+  [k: string]: any;
 };
 
 export type ChemistrySummary = {
@@ -275,7 +224,7 @@ export type ChemistrySummary = {
 };
 
 // ==========================================================
-// 4. Persistence Model
+// 4) Persistence Model
 // ==========================================================
 
 export type PersistModel = {
@@ -300,7 +249,7 @@ export type PersistModel = {
 };
 
 // ==========================================================
-// 5. Units & Utilities (Constants)
+// 5) Units & Utilities
 // ==========================================================
 
 export const GPM_PER_M3H = 4.402867;
@@ -335,10 +284,7 @@ export const DEFAULT_CHEMISTRY: ChemistryInput = {
   silica_mgL_SiO2: null,
 };
 
-// ==========================================================
-// 6. Utility Functions
-// ==========================================================
-
+// --- conversions
 export function convFlow(v: number, from: UnitMode, to: UnitMode): number {
   if (from === to) return v;
   return from === 'SI' ? v * GPM_PER_M3H : v / GPM_PER_M3H;
@@ -369,11 +315,11 @@ export function unitLabel(
   return mode === 'SI' ? 'LMH' : 'gfd';
 }
 
-export const fmt = (n: number | undefined, d = 2): string =>
-  n == null ? '-' : Number(n).toFixed(d);
+export const fmt = (n: number | undefined | null, d = 2): string =>
+  n == null || !Number.isFinite(Number(n)) ? '-' : Number(n).toFixed(d);
 
-export const pct = (n: number | undefined, d = 1): string =>
-  n == null ? '-' : `${Number(n).toFixed(d)}%`;
+export const pct = (n: number | undefined | null, d = 1): string =>
+  n == null || !Number.isFinite(Number(n)) ? '-' : `${Number(n).toFixed(d)}%`;
 
 export function clampf(n: any, lo: number, hi: number): number {
   const x = Number(n);
@@ -393,32 +339,31 @@ export function clampInt(v: any, lo: number, hi: number): number {
 }
 
 // ==========================================================
-// 7. Simulation Result Types (Synced with Backend)
+// 6) Legacy HRRO-only result type (kept for compatibility)
 // ==========================================================
 
-// ✅ HRRO/Process Result Type (Standardized)
 export type HRRORunOutput = {
   minutes: number;
   recovery_pct: number;
 
-  // Loop status
   V_loop_final_m3: number;
   C_loop_final_mgL: number;
 
-  // Totals
   Qp_total_m3: number;
   Cp_mix_mgL: number;
 
-  // [Standardized Keys] Backend StageMetric과 일치
-  jw_avg_lmh: number; // flux
+  // standardized
+  flux_lmh: number;
   ndp_bar: number;
   sec_kwhm3: number;
+
+  // legacy
+  jw_avg_lmh?: number;
 
   p_set_bar: number;
   avg_delta_pi_bar: number;
   bleed_total_m3: number;
 
-  // [Graph Data] Shared TimeSeriesPoint
   time_history: TimeSeriesPoint[];
   stage_metrics: any[];
 

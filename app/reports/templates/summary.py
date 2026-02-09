@@ -9,11 +9,14 @@ from reportlab.pdfgen import canvas
 
 from .common import ensure_font, fmt_num, draw_table, draw_hline
 
+# --- robust helpers ----------------------------------------------------------
 _STAGE_KEYS = ("stage", "stage_no", "stage_index", "stage_id", "idx")
+_TYPE_KEYS = ("module_type", "type", "module", "unit_op")
 
-# ✅ 표준: p_in_bar / p_out_bar, 레거시: pin_bar / pout_bar 등
+# ✅ 표준: p_in_bar / p_out_bar, 레거시: pin / pout / pin_bar / pout_bar 등
 _PIN_KEYS = (
     "p_in_bar",
+    "pin",
     "pin_bar",
     "Pin_bar",
     "P_in_bar",
@@ -24,6 +27,7 @@ _PIN_KEYS = (
 )
 _POUT_KEYS = (
     "p_out_bar",
+    "pout",
     "pout_bar",
     "Pout_bar",
     "P_out_bar",
@@ -33,12 +37,13 @@ _POUT_KEYS = (
     "p_out",
 )
 
-# ✅ 표준: jw_avg_lmh, 레거시: flux_lmh 등
+# ✅ 표준 우선: flux_lmh -> jw_avg_lmh(레거시)
 _JW_KEYS = (
+    "flux_lmh",
     "jw_avg_lmh",
+    "avg_flux_lmh",
     "Jw_avg_Lmh",
     "Jw_avg_LMH",
-    "flux_lmh",
     "Flux_LMH",
     "Jw_LMH",
     "avg_LMH",
@@ -57,6 +62,25 @@ _SEC_KEYS = (
 )
 
 
+def _as_dict(m: Any) -> Dict[str, Any]:
+    if isinstance(m, dict):
+        return m
+    if hasattr(m, "model_dump"):  # Pydantic V2
+        try:
+            return m.model_dump()
+        except Exception:
+            pass
+    if hasattr(m, "dict"):  # Pydantic V1
+        try:
+            return m.dict()
+        except Exception:
+            pass
+    try:
+        return dict(m)
+    except Exception:
+        return {}
+
+
 def _get_first(d: Dict[str, Any], keys: Tuple[str, ...], default=None):
     for k in keys:
         if k in d and d[k] is not None:
@@ -64,36 +88,64 @@ def _get_first(d: Dict[str, Any], keys: Tuple[str, ...], default=None):
     return default
 
 
-def _rows_from_stage_metrics(
-    stage_metrics: List[Dict[str, Any]] | None,
-) -> List[List[str]]:
+def _num(v: Any) -> float | None:
+    try:
+        if v is None:
+            return None
+        return float(v)
+    except Exception:
+        return None
+
+
+def _dp(pin: Any, pout: Any) -> float | None:
+    a = _num(pin)
+    b = _num(pout)
+    if a is None or b is None:
+        return None
+    return a - b
+
+
+def _rows_from_stage_metrics(stage_metrics: List[Any] | None) -> List[List[str]]:
     if not stage_metrics:
         return []
     rows = []
-    for m in stage_metrics:
+    for m0 in stage_metrics:
+        m = _as_dict(m0)
         stg = _get_first(m, _STAGE_KEYS, None)
+        mtype = _get_first(m, _TYPE_KEYS, None)
         pin = _get_first(m, _PIN_KEYS, None)
         pout = _get_first(m, _POUT_KEYS, None)
         jw = _get_first(m, _JW_KEYS, None)
         sec = _get_first(m, _SEC_KEYS, None)
+        dp = _get_first(m, ("dp_bar", "delta_p_bar", "deltaP_bar"), None)
+        dp = dp if dp is not None else _dp(pin, pout)
 
         stage_lbl = (
             str(int(stg))
             if isinstance(stg, (int, float))
             else (str(stg) if stg else "—")
         )
+        type_lbl = (
+            str(mtype).upper()
+            if isinstance(mtype, str)
+            else (str(mtype) if mtype else "—")
+        )
+
         rows.append(
             (
                 stg,
                 [
                     stage_lbl,
+                    type_lbl,
                     fmt_num(pin, 2),
                     fmt_num(pout, 2),
+                    fmt_num(dp, 2),
                     fmt_num(jw, 1),
                     fmt_num(sec, 3),
                 ],
             )
         )
+
     try:
         rows.sort(key=lambda x: (9999 if x[0] is None else float(x[0])))
     except Exception:
@@ -105,12 +157,16 @@ def _rows_from_streams(streams: List[Dict[str, Any]] | None) -> List[List[str]]:
     if not streams:
         return []
     rows = []
-    for s in streams:
+    for s0 in streams:
+        s = _as_dict(s0)
         stg = _get_first(s, _STAGE_KEYS, None)
+        mtype = _get_first(s, _TYPE_KEYS, None)
         pin = _get_first(s, _PIN_KEYS, None)
         pout = _get_first(s, _POUT_KEYS, None)
         jw = _get_first(s, _JW_KEYS, None)
         sec = _get_first(s, _SEC_KEYS, None)
+        dp = _get_first(s, ("dp_bar", "delta_p_bar", "deltaP_bar"), None)
+        dp = dp if dp is not None else _dp(pin, pout)
 
         if stg is None and all(v is None for v in (pin, pout, jw, sec)):
             continue
@@ -120,13 +176,21 @@ def _rows_from_streams(streams: List[Dict[str, Any]] | None) -> List[List[str]]:
             if isinstance(stg, (int, float))
             else (str(stg) if stg else "—")
         )
+        type_lbl = (
+            str(mtype).upper()
+            if isinstance(mtype, str)
+            else (str(mtype) if mtype else "—")
+        )
+
         rows.append(
             (
                 stg,
                 [
                     stage_lbl,
+                    type_lbl,
                     fmt_num(pin, 2),
                     fmt_num(pout, 2),
+                    fmt_num(dp, 2),
                     fmt_num(jw, 1),
                     fmt_num(sec, 3),
                 ],
@@ -139,12 +203,13 @@ def _rows_from_streams(streams: List[Dict[str, Any]] | None) -> List[List[str]]:
     return [r for _, r in rows]
 
 
+# --- public ------------------------------------------------------------------
 def draw_system_summary(
     c: canvas.Canvas,
     streams: list[dict],
     kpi: dict,
     units: dict | None = None,
-    stage_metrics: list[dict] | None = None,
+    stage_metrics: list[Any] | None = None,
 ):
     units = units or {"flow": "m3/h", "pressure": "bar", "flux": "LMH"}
     W, H = A4
@@ -184,7 +249,7 @@ def draw_system_summary(
         ),
     ]
     for label, keys in k_map:
-        val = _get_first(kpi or {}, keys, None) if isinstance(kpi, dict) else None
+        val = _get_first(_as_dict(kpi), keys, None)
         c.drawString(x0, y, f"- {label}: {fmt_num(val, 3)}")
         y -= 14
         if y < 30 * mm:
@@ -202,9 +267,11 @@ def draw_system_summary(
 
     headers = [
         "Stage",
+        "Type",
         f"Pin ({units.get('pressure','bar')})",
         f"Pout ({units.get('pressure','bar')})",
-        f"Jw avg ({units.get('flux','LMH')})",
+        f"ΔP ({units.get('pressure','bar')})",
+        f"Flux ({units.get('flux','LMH')})",
         "SEC (kWh/m³)",
     ]
 
@@ -216,11 +283,13 @@ def draw_system_summary(
 
     total_w = x1 - x0
     col_ws = [
-        total_w * 0.14,
-        total_w * 0.21,
-        total_w * 0.21,
-        total_w * 0.22,
-        total_w * 0.22,
+        total_w * 0.10,  # Stage
+        total_w * 0.12,  # Type
+        total_w * 0.15,  # Pin
+        total_w * 0.15,  # Pout
+        total_w * 0.12,  # dP
+        total_w * 0.16,  # Flux
+        total_w * 0.20,  # SEC
     ]
 
     if rows:

@@ -1,7 +1,6 @@
 // ui/src/components/common/DetailedResultModal.tsx
-// ✅ [FIXED VERSION] Missing Icons Imported (Loader2, Beaker added)
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   X,
   Calculator,
@@ -18,10 +17,9 @@ import {
   Droplet,
   ArrowRight,
   AlertCircle,
-  CheckCircle2, // ✅ 추가됨
-  AlertTriangle, // ✅ 추가됨
-  Loader2, // ✅ 추가됨 (에러 원인)
-  Beaker, // ✅ 추가됨
+  CheckCircle2,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import {
   ComposedChart,
@@ -35,7 +33,7 @@ import {
 } from 'recharts';
 import { fmt, pct, UnitMode } from '../../features/simulation/model/types';
 
-// --- STYLING CONSTANTS (Professional Dark Theme) ---
+// --- STYLING CONSTANTS ---
 const STYLES = {
   OVERLAY:
     'fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200',
@@ -70,17 +68,15 @@ export function DetailedResultModal({
   onClose,
   data,
 }: DetailedResultModalProps) {
-  // --- STATE ---
   const [selectedScope, setSelectedScope] = useState<'SYSTEM' | number>(
     'SYSTEM',
   );
   const [activeTab, setActiveTab] = useState<string>('summary');
 
-  // --- CHART SIZING LOGIC (The Fix) ---
+  // --- CHART SIZING LOGIC ---
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
 
-  // Init on Open
   useEffect(() => {
     if (isOpen) {
       setSelectedScope('SYSTEM');
@@ -88,15 +84,11 @@ export function DetailedResultModal({
     }
   }, [isOpen]);
 
-  // ResizeObserver: Measures the div size exactly to prevent Recharts 0-width bug
   useEffect(() => {
     if (activeTab === 'profile' && chartContainerRef.current) {
       const observer = new ResizeObserver((entries) => {
         const { width, height } = entries[0].contentRect;
-        // Use requestAnimationFrame to avoid "ResizeObserver loop limit exceeded"
-        requestAnimationFrame(() => {
-          setChartSize({ width, height });
-        });
+        requestAnimationFrame(() => setChartSize({ width, height }));
       });
       observer.observe(chartContainerRef.current);
       return () => observer.disconnect();
@@ -122,7 +114,7 @@ export function DetailedResultModal({
   const chartData = useMemo(() => {
     if (!currentData) return [];
 
-    // HRRO: Time History (Dynamic Cycle)
+    // HRRO: Time History
     if (
       isHRRO &&
       currentData.time_history &&
@@ -130,13 +122,13 @@ export function DetailedResultModal({
     ) {
       return currentData.time_history.map((d: any) => ({
         ...d,
-        flux_lmh: Number(d.flux_lmh || 0),
-        pressure_bar: Number(d.pressure_bar || 0),
-        recovery_pct: Number(d.recovery_pct || 0),
-        time_min: Number(d.time_min || 0),
+        flux_lmh: Number(d.flux_lmh ?? 0),
+        pressure_bar: Number(d.pressure_bar ?? 0),
+        recovery_pct: Number(d.recovery_pct ?? 0),
+        time_min: Number(d.time_min ?? 0),
       }));
     }
-    // RO/NF: Element Profile (Static)
+    // RO/NF: Element Profile (if provided)
     return currentData.element_profile || [];
   }, [currentData, isHRRO]);
 
@@ -164,18 +156,18 @@ export function DetailedResultModal({
     };
   }
 
-  // Display Values
-  const displayRecovery = currentData.recovery_pct || 0;
-  const displayEnergy = currentData.sec_kwhm3 || 0;
-  const displayFlux = currentData.jw_avg_lmh || currentData.flux_lmh || 0;
-  const displayNDP = currentData.ndp_bar || 0;
+  // Display Values (표준키 우선)
+  const displayRecovery = currentData.recovery_pct ?? 0;
+  const displayEnergy = currentData.sec_kwhm3 ?? 0;
+  const displayFlux = currentData.flux_lmh ?? currentData.jw_avg_lmh ?? 0;
+  const displayNDP = currentData.ndp_bar ?? 0;
 
   if (!isOpen || !data) return null;
 
   return (
     <div className={STYLES.OVERLAY}>
       <div className={STYLES.CONTAINER}>
-        {/* === 1. HEADER === */}
+        {/* === HEADER === */}
         <div className={STYLES.HEADER}>
           <div className="flex items-center gap-4">
             <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-2.5 rounded-lg text-white shadow-lg shadow-blue-900/20 ring-1 ring-white/10">
@@ -213,7 +205,7 @@ export function DetailedResultModal({
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          {/* === 2. SIDEBAR NAVIGATION === */}
+          {/* === SIDEBAR === */}
           <div className={STYLES.SIDEBAR}>
             <div className="p-4 pt-6 pb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
               <Globe className="w-3 h-3" /> System Boundary
@@ -231,7 +223,7 @@ export function DetailedResultModal({
             <div className="space-y-0.5 px-2">
               {stages.map((s: any, idx: number) => (
                 <SidebarBtn
-                  key={idx}
+                  key={`${s.stage ?? idx}-${s.module_type ?? 'X'}`}
                   active={selectedScope === idx}
                   onClick={() => setSelectedScope(idx)}
                   icon={s.module_type === 'HRRO' ? Clock : Waves}
@@ -242,9 +234,8 @@ export function DetailedResultModal({
             </div>
           </div>
 
-          {/* === 3. MAIN CONTENT AREA === */}
+          {/* === CONTENT === */}
           <div className={STYLES.CONTENT}>
-            {/* TABS */}
             <div className={STYLES.TAB_BAR}>
               <TabBtn
                 active={activeTab === 'summary'}
@@ -252,7 +243,6 @@ export function DetailedResultModal({
                 icon={Activity}
                 label="Overview"
               />
-              {/* Show Graph tab only if HRRO or data exists */}
               {!isSystemView && (isHRRO || chartData.length > 0) && (
                 <TabBtn
                   active={activeTab === 'profile'}
@@ -276,12 +266,10 @@ export function DetailedResultModal({
             </div>
 
             <div className={STYLES.SCROLL_AREA}>
-              {/* --- TAB: SUMMARY --- */}
+              {/* TAB: SUMMARY */}
               {activeTab === 'summary' && (
                 <div className="p-8 max-w-[1400px] mx-auto grid grid-cols-12 gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  {/* Left: Tables */}
                   <div className="col-span-12 xl:col-span-8 space-y-6">
-                    {/* Mass Balance Table */}
                     <div className="rounded-xl border border-slate-700 bg-[#1e293b]/30 overflow-hidden shadow-sm">
                       <div className="bg-slate-800/80 px-5 py-3 border-b border-slate-700 flex justify-between items-center backdrop-blur-md">
                         <span className="text-sm font-bold text-slate-200 flex items-center gap-2">
@@ -344,7 +332,6 @@ export function DetailedResultModal({
                       </table>
                     </div>
 
-                    {/* Stage Breakdown (System View) */}
                     {isSystemView && stages.length > 0 && (
                       <div className="rounded-xl border border-slate-700 bg-[#1e293b]/30 overflow-hidden shadow-sm">
                         <div className="bg-slate-800/80 px-5 py-3 border-b border-slate-700">
@@ -372,7 +359,7 @@ export function DetailedResultModal({
                           <tbody className="divide-y divide-slate-800/50">
                             {stages.map((s: any, i: number) => (
                               <tr
-                                key={i}
+                                key={`${s.stage ?? i}-${s.module_type ?? 'X'}`}
                                 className="hover:bg-white/5 transition-colors cursor-pointer"
                                 onClick={() => setSelectedScope(i)}
                               >
@@ -396,7 +383,7 @@ export function DetailedResultModal({
                                   </span>
                                 </td>
                                 <td className={STYLES.TD}>
-                                  {fmt(s.jw_avg_lmh)}
+                                  {fmt(s.flux_lmh ?? s.jw_avg_lmh)}
                                 </td>
                                 <td className={STYLES.TD}>{fmt(s.ndp_bar)}</td>
                                 <td className={STYLES.TD}>
@@ -410,7 +397,6 @@ export function DetailedResultModal({
                     )}
                   </div>
 
-                  {/* Right: KPIs */}
                   <div className="col-span-12 xl:col-span-4 space-y-4">
                     <BigKPI
                       label="System Recovery"
@@ -444,7 +430,7 @@ export function DetailedResultModal({
                 </div>
               )}
 
-              {/* --- TAB 2: GRAPH (RESIZE OBSERVER FIXED) --- */}
+              {/* TAB: GRAPH (CHART) */}
               {activeTab === 'profile' && !isSystemView && (
                 <div className="h-full flex flex-col p-6 animate-in fade-in duration-500">
                   <div className="flex-none mb-4 flex justify-between items-end px-2">
@@ -465,34 +451,16 @@ export function DetailedResultModal({
                           : 'Axial profile along the pressure vessel.'}
                       </p>
                     </div>
-                    {/* Legend */}
-                    <div className="flex gap-4 text-xs font-bold bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-800">
-                      <div className="flex items-center gap-1.5 text-blue-400">
-                        <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />{' '}
-                        Flux
-                      </div>
-                      <div className="flex items-center gap-1.5 text-orange-400">
-                        <div className="w-2 h-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(251,146,60,0.5)]" />{' '}
-                        Pressure
-                      </div>
-                      {isHRRO && (
-                        <div className="flex items-center gap-1.5 text-emerald-400">
-                          <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />{' '}
-                          Recovery
-                        </div>
-                      )}
-                    </div>
                   </div>
 
-                  {/* 🔥 Graph Container with Ref */}
                   <div
                     ref={chartContainerRef}
                     className="flex-1 bg-slate-900/30 border border-slate-700/50 rounded-xl p-4 min-h-[450px] relative w-full overflow-hidden"
                   >
                     {chartData.length > 0 && chartSize.width > 0 ? (
                       <ComposedChart
-                        width={chartSize.width - 32}
-                        height={chartSize.height - 32}
+                        width={Math.max(10, chartSize.width - 32)}
+                        height={Math.max(10, chartSize.height - 32)}
                         data={chartData}
                         margin={{ top: 10, right: 30, bottom: 10, left: 10 }}
                       >
@@ -515,7 +483,6 @@ export function DetailedResultModal({
                             dy: 10,
                           }}
                         />
-
                         <YAxis
                           yAxisId="left"
                           stroke="#3b82f6"
@@ -533,7 +500,6 @@ export function DetailedResultModal({
                           axisLine={false}
                           domain={['auto', 'auto']}
                         />
-
                         <Tooltip
                           contentStyle={{
                             backgroundColor: '#0f172a',
@@ -542,21 +508,25 @@ export function DetailedResultModal({
                             fontSize: '12px',
                           }}
                           itemStyle={{ padding: 0 }}
-                          formatter={(val: number) => val.toFixed(2)}
+                          formatter={(val: number) => Number(val).toFixed(2)}
                           labelFormatter={(label) =>
                             isHRRO ? `Time: ${label} min` : `Element: ${label}`
                           }
                         />
-
                         {isHRRO && (
                           <ReferenceLine
                             y={60}
                             yAxisId="right"
                             stroke="#10b981"
                             strokeDasharray="3 3"
+                            label={{
+                              position: 'right',
+                              value: 'Target',
+                              fill: '#10b981',
+                              fontSize: 10,
+                            }}
                           />
                         )}
-
                         <Area
                           yAxisId="left"
                           type="monotone"
@@ -565,7 +535,6 @@ export function DetailedResultModal({
                           stroke="#3b82f6"
                           strokeWidth={2}
                           fillOpacity={0.15}
-                          activeDot={{ r: 6, strokeWidth: 0 }}
                         />
                         <Line
                           yAxisId="right"
@@ -574,7 +543,6 @@ export function DetailedResultModal({
                           stroke="#fb923c"
                           strokeWidth={2}
                           dot={false}
-                          activeDot={{ r: 6, strokeWidth: 0 }}
                         />
                         {isHRRO && (
                           <Line
@@ -587,7 +555,6 @@ export function DetailedResultModal({
                             dot={false}
                           />
                         )}
-
                         <defs>
                           <linearGradient
                             id="colorFlux"
@@ -632,7 +599,7 @@ export function DetailedResultModal({
                 </div>
               )}
 
-              {/* --- TAB 3: CHEMISTRY (Fully Implemented) --- */}
+              {/* TAB: CHEMISTRY */}
               {activeTab === 'chemistry' && (
                 <div className="p-8 max-w-[1200px] mx-auto animate-in fade-in duration-300">
                   <div className="mb-6">
@@ -648,13 +615,11 @@ export function DetailedResultModal({
 
                   {chemistry.feed ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      {/* Feed Analysis */}
                       <ChemCard
                         title="Feed Water"
                         color="blue"
                         data={chemistry.feed}
                       />
-                      {/* Brine Analysis */}
                       {chemistry.final_brine ? (
                         <ChemCard
                           title="Concentrate (Brine)"
@@ -676,7 +641,7 @@ export function DetailedResultModal({
                 </div>
               )}
 
-              {/* --- TAB 4: ENERGY --- */}
+              {/* TAB: ENERGY */}
               {activeTab === 'power' && (
                 <div className="flex flex-col items-center justify-center min-h-[500px] text-slate-500 space-y-4 animate-in fade-in">
                   <div className="p-6 bg-slate-900 rounded-full ring-1 ring-slate-700 shadow-lg">
@@ -693,7 +658,7 @@ export function DetailedResultModal({
                       </span>
                     </div>
                     <p className="text-sm max-w-md mx-auto opacity-70">
-                      Calculated based on pump efficiency (80%) and operating
+                      Calculated based on pump efficiency and operating
                       pressure.
                     </p>
                   </div>
@@ -708,21 +673,29 @@ export function DetailedResultModal({
 }
 
 // --- SUB COMPONENTS ---
-
-// 1. Sidebar Button
 function SidebarBtn({ active, onClick, icon: Icon, label, badge }: any) {
   return (
     <button
       onClick={onClick}
-      className={`mx-3 mb-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all group ${active ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}
+      className={`mx-3 mb-1 flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all group ${
+        active
+          ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
+          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+      }`}
     >
       <Icon
-        className={`w-4 h-4 transition-colors ${active ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'}`}
+        className={`w-4 h-4 transition-colors ${
+          active ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'
+        }`}
       />
       <span className="flex-1 text-left">{label}</span>
       {badge && (
         <span
-          className={`text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide ${active ? 'bg-blue-500 text-blue-100 border border-blue-400' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}
+          className={`text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide ${
+            active
+              ? 'bg-blue-500 text-blue-100 border border-blue-400'
+              : 'bg-slate-800 text-slate-500 border border-slate-700'
+          }`}
         >
           {badge}
         </span>
@@ -731,20 +704,20 @@ function SidebarBtn({ active, onClick, icon: Icon, label, badge }: any) {
     </button>
   );
 }
-
-// 2. Tab Button
 function TabBtn({ active, onClick, icon: Icon, label }: any) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-5 py-3 text-xs font-bold transition-all border-b-[2px] outline-none ${active ? 'border-blue-500 text-blue-400 bg-slate-800/50' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'}`}
+      className={`flex items-center gap-2 px-5 py-3 text-xs font-bold transition-all border-b-[2px] outline-none ${
+        active
+          ? 'border-blue-500 text-blue-400 bg-slate-800/50'
+          : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-800/30'
+      }`}
     >
       <Icon className="w-4 h-4" /> {label}
     </button>
   );
 }
-
-// 3. Table Row
 function Row({ label, icon, color, flow, tds, press }: any) {
   return (
     <tr className="hover:bg-slate-800/30 transition-colors group">
@@ -762,8 +735,6 @@ function Row({ label, icon, color, flow, tds, press }: any) {
     </tr>
   );
 }
-
-// 4. KPI Card
 function BigKPI({ label, value, unit, icon: Icon, color, subValue }: any) {
   const map: any = {
     blue: 'text-blue-400 from-blue-500/10 to-blue-500/5 border-blue-500/20',
@@ -800,7 +771,6 @@ function BigKPI({ label, value, unit, icon: Icon, color, subValue }: any) {
     </div>
   );
 }
-
 function MiniKPI({ label, value, unit }: any) {
   return (
     <div className="p-4 rounded-lg border border-slate-700 bg-slate-800/30 hover:bg-slate-800/50 transition-colors">
@@ -814,8 +784,6 @@ function MiniKPI({ label, value, unit }: any) {
     </div>
   );
 }
-
-// 5. Chemistry Card (New)
 function ChemCard({ title, color, data }: any) {
   const headerColor = color === 'blue' ? 'bg-blue-500' : 'bg-orange-500';
   return (
@@ -868,15 +836,11 @@ function ChemCard({ title, color, data }: any) {
     </div>
   );
 }
-
 function ChemRow({ label, value, unit = '', desc, threshold, type }: any) {
   if (value === undefined || value === null) return null;
-
-  // Safety Logic: Green is good, Red is bad
   let isSafe = true;
-  if (type === 'max' && value > threshold) isSafe = false; // LSI > 0 is bad
-  if (type === 'min' && value < threshold) isSafe = false; // RSI < 6 is bad
-
+  if (type === 'max' && value > threshold) isSafe = false;
+  if (type === 'min' && value < threshold) isSafe = false;
   return (
     <div className="flex items-center justify-between group">
       <div>
@@ -889,7 +853,7 @@ function ChemRow({ label, value, unit = '', desc, threshold, type }: any) {
         <div
           className={`text-sm font-mono font-bold ${isSafe ? 'text-emerald-400' : 'text-red-400'}`}
         >
-          {value.toFixed(2)}{' '}
+          {Number(value).toFixed(2)}{' '}
           <span className="text-[10px] opacity-60">{unit}</span>
         </div>
         {isSafe ? (
