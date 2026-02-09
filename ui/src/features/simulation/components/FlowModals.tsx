@@ -1,6 +1,6 @@
 // ui/src/features/simulation/components/FlowModals.tsx
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Node } from 'reactflow';
 
 import {
@@ -97,7 +97,6 @@ const CATIONS: IonDef[] = [
   { label: 'Ca', key: 'ca_mgL', mw: MW.Ca, z: +2 },
   { label: 'Sr', key: 'sr_mgL', mw: MW.Sr, z: +2 },
   { label: 'Ba', key: 'ba_mgL', mw: MW.Ba, z: +2 },
-  // WAVE 느낌으로 기본 +2 가정
   { label: 'Fe', key: 'fe_mgL', mw: MW.Fe, z: +2 },
   { label: 'Mn', key: 'mn_mgL', mw: MW.Mn, z: +2 },
 ];
@@ -124,7 +123,27 @@ function n0(v: any): number {
   return Number.isFinite(x) ? x : 0;
 }
 
-// mg/L -> meq/L : (mg/L / MW[g/mol]) = mmol/L, meq/L = mmol/L * |z|
+function roundTo(v: number, dp: number): number {
+  const p = Math.pow(10, dp);
+  return Math.round(v * p) / p;
+}
+
+function fmtNumber(v: any, dp = 1): string {
+  const x = Number(v);
+  if (!Number.isFinite(x)) return '0';
+  const s = x.toFixed(dp);
+  return s.replace(/\.0+$/, '');
+}
+
+function fmtInputNumber(v: any, maxDp = 3): string {
+  if (v === '' || v === null || v === undefined) return '';
+  const x = Number(v);
+  if (!Number.isFinite(x)) return '';
+  const s = x.toFixed(maxDp);
+  return s.replace(/\.?0+$/, '');
+}
+
+// mg/L -> meq/L
 function mgL_to_meqL(mgL: number, mw: number, z: number): number {
   if (!mw || !z) return 0;
   return (mgL / mw) * Math.abs(z);
@@ -147,81 +166,295 @@ function sumMeqL(chem: any, defs: IonDef[]) {
 }
 
 // ------------------------------------------------------------------
-// Helper: Ion Row (WAVE-style 4-column view)
+// WAVE-style Charge Balance Adjustment (옵션 A 구현)
 // ------------------------------------------------------------------
-function IonRow({
-  def,
-  value,
-  onChange,
-  showDerived = true,
-}: {
-  def: IonDef;
-  value: any;
-  onChange: (v: number) => void;
-  showDerived?: boolean;
-}) {
-  const mgL = n0(value);
-  const meqL = showDerived ? mgL_to_meqL(mgL, def.mw, def.z) : 0;
-  const ppm = showDerived ? meqL_to_ppmCaCO3(meqL) : 0;
+type ChargeBalanceMode = 'off' | 'anions' | 'cations' | 'all';
 
-  return (
-    <div className="grid grid-cols-[44px_1fr_78px_78px] gap-2 items-center px-2 py-1 rounded-md bg-slate-950/60 border border-slate-800 hover:border-slate-700 transition-colors">
-      <div className="text-[11px] font-semibold text-slate-300">
-        {def.label}
-      </div>
+type ChargeBalanceMeta = {
+  mode: ChargeBalanceMode;
+  raw_c_meq: number;
+  raw_a_meq: number;
+  raw_delta_meq: number;
+  adj_c_meq: number;
+  adj_a_meq: number;
+  adj_delta_meq: number;
+  adjustments_mgL: Record<string, number>; // key -> (adj - raw)
+  note?: string;
+};
 
-      <input
-        type="number"
-        className="w-full bg-transparent text-right text-[12px] text-slate-100 outline-none font-mono tabular-nums"
-        value={value ?? ''}
-        placeholder="0"
-        onFocus={(e) => e.currentTarget.select()}
-        onChange={(e) => {
-          const raw = e.target.value;
-          const v = raw === '' ? 0 : Number(raw);
-          onChange(Number.isFinite(v) ? v : 0);
-        }}
-      />
-
-      <div className="text-right text-[10px] font-mono text-slate-400 tabular-nums">
-        {showDerived ? ppm.toFixed(1) : '—'}
-      </div>
-
-      <div className="text-right text-[10px] font-mono text-slate-400 tabular-nums">
-        {showDerived ? meqL.toFixed(4) : '—'}
-      </div>
-    </div>
-  );
+function cloneChem(chem: any): any {
+  return JSON.parse(JSON.stringify(chem ?? {}));
 }
 
-function StatCard({
-  label,
-  value,
-  unit,
-  tone = 'default',
+// deltaMeq를 특정 이온에 반영 (mg/L로 환산해서 더/빼기)
+function applyDeltaMeqToIon(
+  chem: any,
+  ionKey: string,
+  mw: number,
+  z: number,
+  deltaMeq: number,
+): { remainingMeq: number; appliedMgL: number } {
+  const absz = Math.abs(z) || 1;
+  const mgDelta = (deltaMeq * mw) / absz;
+
+  const before = n0(chem?.[ionKey]);
+  const after = Math.max(0, before + mgDelta);
+
+  chem[ionKey] = roundTo(after, 3);
+
+  const appliedMgL = after - before; // can be negative
+  // ✅ signed meq change (appliedMgL can be negative)
+  const appliedMeqSigned = (appliedMgL / (mw || 1)) * absz;
+
+  return { remainingMeq: deltaMeq - appliedMeqSigned, appliedMgL };
+}
+
+function diffAdjustmentsMgL(
+  raw: any,
+  adj: any,
+  keys: string[],
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const k of keys) {
+    const dv = roundTo(n0(adj?.[k]) - n0(raw?.[k]), 3);
+    if (Math.abs(dv) >= 0.001) out[k] = dv;
+  }
+  return out;
+}
+
+// Anions만 조정
+function adjustAnionsToBalance(chemRaw: any): { chemAdj: any; note?: string } {
+  const chem = cloneChem(chemRaw);
+
+  const c = sumMeqL(chem, CATIONS);
+  const a = sumMeqL(chem, ANIONS);
+  const delta = c - a; // +면 anions가 부족, -면 anions가 과잉
+
+  const order: IonDef[] = [
+    ANIONS.find((x) => x.label === 'Cl')!,
+    ANIONS.find((x) => x.label === 'HCO3')!,
+    ANIONS.find((x) => x.label === 'SO4')!,
+    ANIONS.find((x) => x.label === 'NO3')!,
+    ANIONS.find((x) => x.label === 'Br')!,
+    ANIONS.find((x) => x.label === 'CO3')!,
+    ANIONS.find((x) => x.label === 'PO4')!,
+    ANIONS.find((x) => x.label === 'F')!,
+  ].filter(Boolean) as IonDef[];
+
+  let remaining = delta; // anions meq change needed (signed)
+  for (const ion of order) {
+    if (Math.abs(remaining) < 1e-6) break;
+    const r = applyDeltaMeqToIon(chem, ion.key, ion.mw, ion.z, remaining);
+    remaining = r.remainingMeq;
+  }
+
+  let note: string | undefined;
+  if (Math.abs(remaining) >= 1e-3) {
+    note = '전하 보정(Anions)에서 일부 잔여 오차가 남았습니다(클램핑/0 하한).';
+  }
+  return { chemAdj: chem, note };
+}
+
+// Cations만 조정
+function adjustCationsToBalance(chemRaw: any): { chemAdj: any; note?: string } {
+  const chem = cloneChem(chemRaw);
+
+  const c = sumMeqL(chem, CATIONS);
+  const a = sumMeqL(chem, ANIONS);
+  const delta = c - a; // +면 cations 과잉, -면 cations 부족
+
+  // 목표: cations 변화량 = (a - c) = -delta
+  let remaining = -delta;
+
+  const order: IonDef[] = [
+    CATIONS.find((x) => x.label === 'Na')!,
+    CATIONS.find((x) => x.label === 'Ca')!,
+    CATIONS.find((x) => x.label === 'Mg')!,
+    CATIONS.find((x) => x.label === 'K')!,
+    CATIONS.find((x) => x.label === 'NH4')!,
+    CATIONS.find((x) => x.label === 'Sr')!,
+    CATIONS.find((x) => x.label === 'Ba')!,
+    CATIONS.find((x) => x.label === 'Fe')!,
+    CATIONS.find((x) => x.label === 'Mn')!,
+  ].filter(Boolean) as IonDef[];
+
+  for (const ion of order) {
+    if (Math.abs(remaining) < 1e-6) break;
+    const r = applyDeltaMeqToIon(chem, ion.key, ion.mw, ion.z, remaining);
+    remaining = r.remainingMeq;
+  }
+
+  let note: string | undefined;
+  if (Math.abs(remaining) >= 1e-3) {
+    note = '전하 보정(Cations)에서 일부 잔여 오차가 남았습니다(클램핑/0 하한).';
+  }
+  return { chemAdj: chem, note };
+}
+
+// All(스케일)
+function adjustAllScaleToBalance(chemRaw: any): {
+  chemAdj: any;
+  note?: string;
+} {
+  const chem = cloneChem(chemRaw);
+
+  const c = sumMeqL(chem, CATIONS);
+  const a = sumMeqL(chem, ANIONS);
+
+  if (c <= 0 && a <= 0) return { chemAdj: chem };
+  if (c > 0 && a > 0) {
+    const target = (c + a) / 2;
+    const sC = target / c;
+    const sA = target / a;
+
+    for (const d of CATIONS) chem[d.key] = roundTo(n0(chem[d.key]) * sC, 3);
+    for (const d of ANIONS) chem[d.key] = roundTo(n0(chem[d.key]) * sA, 3);
+    return { chemAdj: chem };
+  }
+
+  if (c > 0 && a <= 0) return adjustAnionsToBalance(chemRaw);
+  return adjustCationsToBalance(chemRaw);
+}
+
+function applyChargeBalance(
+  chemRaw: any,
+  mode: ChargeBalanceMode,
+): { chemUsed: any; meta: ChargeBalanceMeta } {
+  const rawC = sumMeqL(chemRaw, CATIONS);
+  const rawA = sumMeqL(chemRaw, ANIONS);
+  const rawDelta = rawC - rawA;
+
+  let chemAdj = cloneChem(chemRaw);
+  let note: string | undefined;
+
+  if (mode === 'anions') {
+    const r = adjustAnionsToBalance(chemRaw);
+    chemAdj = r.chemAdj;
+    note = r.note;
+  } else if (mode === 'cations') {
+    const r = adjustCationsToBalance(chemRaw);
+    chemAdj = r.chemAdj;
+    note = r.note;
+  } else if (mode === 'all') {
+    const r = adjustAllScaleToBalance(chemRaw);
+    chemAdj = r.chemAdj;
+    note = r.note;
+  } else {
+    chemAdj = cloneChem(chemRaw);
+  }
+
+  const adjC = sumMeqL(chemAdj, CATIONS);
+  const adjA = sumMeqL(chemAdj, ANIONS);
+  const adjDelta = adjC - adjA;
+
+  const allKeys = [
+    ...CATIONS.map((d) => d.key),
+    ...ANIONS.map((d) => d.key),
+    ...NEUTRALS.map((d) => d.key),
+  ];
+
+  const adjustments_mgL = diffAdjustmentsMgL(chemRaw, chemAdj, allKeys);
+
+  const meta: ChargeBalanceMeta = {
+    mode,
+    raw_c_meq: rawC,
+    raw_a_meq: rawA,
+    raw_delta_meq: rawDelta,
+    adj_c_meq: adjC,
+    adj_a_meq: adjA,
+    adj_delta_meq: adjDelta,
+    adjustments_mgL,
+    note,
+  };
+
+  const chemUsed = mode === 'off' ? chemRaw : chemAdj;
+  return { chemUsed, meta };
+}
+
+// ------------------------------------------------------------------
+// Compact Ion Table (WAVE-like)
+// ------------------------------------------------------------------
+function IonTable({
+  title,
+  defs,
+  chem,
+  onChange,
+  accent = 'text-slate-200',
+  showDerived = true,
+  compact = false,
 }: {
-  label: string;
-  value: string;
-  unit?: string;
-  tone?: 'default' | 'good' | 'warn';
+  title: string;
+  defs: IonDef[];
+  chem: any;
+  onChange: (key: string, v: number) => void;
+  accent?: string;
+  showDerived?: boolean;
+  compact?: boolean;
 }) {
-  const toneCls =
-    tone === 'good'
-      ? 'text-emerald-300'
-      : tone === 'warn'
-        ? 'text-amber-300'
-        : 'text-slate-200';
+  const mgSum = defs.reduce((acc, d) => acc + n0(chem?.[d.key]), 0);
 
   return (
-    <div className="px-3 py-2 rounded-lg border border-slate-800 bg-slate-950/40">
-      <div className="text-[10px] text-slate-500 uppercase tracking-wider">
-        {label}
+    <div className="bg-slate-900/40 border border-slate-800 rounded-lg overflow-hidden">
+      <div
+        className={`px-3 ${compact ? 'py-1.5' : 'py-2'} flex items-center justify-between border-b border-slate-800 bg-slate-900/60`}
+      >
+        <div
+          className={`text-[11px] font-bold uppercase tracking-wider ${accent}`}
+        >
+          {title}
+        </div>
+        <div className="text-[11px] font-mono text-slate-400">
+          {fmtNumber(mgSum, 2)} mg/L
+        </div>
       </div>
-      <div className={`text-sm font-mono ${toneCls} tabular-nums`}>
-        {value}{' '}
-        {unit ? (
-          <span className="text-[10px] text-slate-500">{unit}</span>
-        ) : null}
+
+      <div className={`px-3 ${compact ? 'py-1.5' : 'py-2'}`}>
+        <div className="grid grid-cols-4 gap-2 text-[10px] text-slate-500 uppercase tracking-wider px-2 mb-1">
+          <div>이온</div>
+          <div className="text-right">mg/L</div>
+          <div className="text-right">ppm(CaCO3)</div>
+          <div className="text-right">meq/L</div>
+        </div>
+
+        <div className="space-y-1">
+          {defs.map((d) => {
+            const mgL = n0(chem?.[d.key]);
+            const meqL = showDerived ? mgL_to_meqL(mgL, d.mw, d.z) : 0;
+            const ppm = showDerived ? meqL_to_ppmCaCO3(meqL) : 0;
+
+            return (
+              <div
+                key={d.key}
+                className={`grid grid-cols-4 gap-2 items-center px-2 ${compact ? 'py-[5px]' : 'py-1'} rounded border border-slate-800/70 bg-slate-950/40 hover:border-slate-700 transition-colors`}
+              >
+                <div className="text-[11px] font-semibold text-slate-300 w-12">
+                  {d.label}
+                </div>
+
+                <input
+                  type="number"
+                  step="any"
+                  className="w-full bg-transparent text-right text-[12px] text-slate-200 outline-none font-mono"
+                  value={fmtInputNumber(chem?.[d.key], 3)}
+                  placeholder="0"
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const v = raw === '' ? 0 : Number(raw);
+                    onChange(d.key, Number.isFinite(v) ? v : 0);
+                  }}
+                />
+
+                <div className="text-right text-[11px] font-mono text-slate-400">
+                  {showDerived ? fmtNumber(ppm, 1) : '—'}
+                </div>
+                <div className="text-right text-[11px] font-mono text-slate-400">
+                  {showDerived ? fmtNumber(meqL, 3) : '—'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -243,7 +476,6 @@ interface InspectorProps {
     ph: number;
     pressure_bar?: number;
 
-    // WAVE-style feed meta
     water_type?: string | null;
     water_subtype?: string | null;
     turbidity_ntu?: number | null;
@@ -251,10 +483,12 @@ interface InspectorProps {
     sdi15?: number | null;
     toc_mgL?: number | null;
 
-    // UI-only (WAVE min/max temp, memo)
     temp_min_C?: number | null;
     temp_max_C?: number | null;
     feed_note?: string | null;
+
+    // (옵션) UI 설정 저장용
+    charge_balance_mode?: ChargeBalanceMode | null;
 
     [k: string]: any;
   };
@@ -266,6 +500,23 @@ interface InspectorProps {
   setNodes: SetNodesFn;
   setEdges: SetEdgesFn;
   setSelectedNodeId: (id: string | null) => void;
+}
+
+const WATER_TYPE_OPTIONS = [
+  { value: '해수', label: '해수' },
+  { value: '기수', label: '기수/지하수' },
+  { value: '지표수', label: '지표수(강/호수)' },
+  { value: '폐수', label: '폐수(산업/공정)' },
+  { value: '재이용수', label: '재이용수(하수처리수)' },
+];
+
+function categoryToWaterType(category: string | undefined | null): string {
+  if (category === 'Seawater') return '해수';
+  if (category === 'Brackish') return '기수';
+  if (category === 'Surface') return '지표수';
+  if (category === 'Waste') return '폐수';
+  if (category === 'Reuse') return '재이용수';
+  return '기수';
 }
 
 export function UnitInspectorModal(props: InspectorProps) {
@@ -282,21 +533,28 @@ export function UnitInspectorModal(props: InspectorProps) {
     setNodes,
   } = props;
 
-  // ✅ 훅 순서 고정
   useBlockDeleteKeysWhenOpen(isOpen);
 
   const [localFeed, setLocalFeed] = useState<any>(feed);
-  const [localChem, setLocalChem] = useState<any>(feedChemistry || {});
+  const [localChem, setLocalChem] = useState<any>(feedChemistry);
   const [localCfg, setLocalCfg] = useState<any>(null);
-  const [quick, setQuick] = useState({ nacl_mgL: 0, mgso4_mgL: 0 });
 
-  // ✅ “필요할 때만 펼치기” 열렸을 때만 스크롤 허용
+  const [quick, setQuick] = useState({ nacl_mgL: 0, mgso4_mgL: 0 });
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  const isFeedNode = selEndpoint?.data.role === 'feed';
-  const isProductNode = selEndpoint?.data.role === 'product';
+  // ✅ “한 화면 맞춤” 모드
+  const [fitMode, setFitMode] = useState(true);
+  const [fitScale, setFitScale] = useState(1);
 
-  // 로컬 상태 초기화
+  // ✅ 글씨 너무 작아지는 문제 방지: minScale 이하로는 스크롤 허용
+  const [fitNeedsScroll, setFitNeedsScroll] = useState(false);
+
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
+  // ✅ 전하 보정 모드 (WAVE)
+  const [cbMode, setCbMode] = useState<ChargeBalanceMode>('anions');
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -305,6 +563,9 @@ export function UnitInspectorModal(props: InspectorProps) {
 
     setLocalFeed({
       ...feed,
+      water_type: feed?.water_type == null ? '' : String(feed.water_type),
+      water_subtype:
+        feed?.water_subtype == null ? '' : String(feed.water_subtype),
       temp_min_C: minT,
       temp_max_C: maxT,
       feed_note: (feed as any)?.feed_note ?? '',
@@ -314,53 +575,145 @@ export function UnitInspectorModal(props: InspectorProps) {
     setQuick({ nacl_mgL: 0, mgso4_mgL: 0 });
     setDetailsOpen(false);
 
+    const saved = (feed as any)?.charge_balance_mode as
+      | ChargeBalanceMode
+      | undefined;
+    setCbMode(saved ?? 'anions');
+
     if (selUnit && (selUnit.data as any).type === 'unit') {
       setLocalCfg(JSON.parse(JSON.stringify((selUnit.data as any).cfg)));
     } else {
       setLocalCfg(null);
     }
+
+    setFitScale(1);
+    setFitNeedsScroll(false);
   }, [isOpen, selEndpoint?.id, selUnit?.id, feed, feedChemistry]);
 
-  // 파생값
-  const derived = useMemo(() => {
-    const cationSum = sumMgL(localChem, CATIONS);
-    const anionSum = sumMgL(localChem, ANIONS);
-    const neutralSum = sumMgL(localChem, NEUTRALS);
-    const totalTDS = cationSum + anionSum + neutralSum;
+  // ✅ Fit 스케일 계산
+  const fitActive = fitMode && !detailsOpen;
 
-    const cationMeq = sumMeqL(localChem, CATIONS);
-    const anionMeq = sumMeqL(localChem, ANIONS);
-    const chargeBalance_meqL = cationMeq - anionMeq;
+  useLayoutEffect(() => {
+    if (!isOpen) return;
 
-    // Hardness(as CaCO3) = (Ca meq + Mg meq) * 50
-    const ca_meq = mgL_to_meqL(n0(localChem?.ca_mgL), MW.Ca, +2);
-    const mg_meq = mgL_to_meqL(n0(localChem?.mg_mgL), MW.Mg, +2);
-    const calcHardness = (ca_meq + mg_meq) * 50.0;
+    if (!fitActive) {
+      setFitScale(1);
+      setFitNeedsScroll(false);
+      return;
+    }
 
-    // Alkalinity(as CaCO3) = (HCO3 meq + CO3 meq) * 50
-    const hco3_meq = mgL_to_meqL(n0(localChem?.hco3_mgL), MW.HCO3, -1);
-    const co3_meq = mgL_to_meqL(n0(localChem?.co3_mgL), MW.CO3, -2);
-    const calcAlkalinity = (hco3_meq + co3_meq) * 50.0;
+    const body = bodyRef.current;
+    const content = contentRef.current;
+    if (!body || !content) return;
 
-    // Conductivity (uS/cm) — 초기 근사
-    const estConductivity_uScm = totalTDS * 1.7;
+    const minScale = 0.85; // ✅ 가독성 최소 배율(추천: 0.85~0.9)
 
-    return {
-      cationSum,
-      anionSum,
-      neutralSum,
-      totalTDS,
-      cationMeq,
-      anionMeq,
-      chargeBalance_meqL,
-      calcHardness,
-      calcAlkalinity,
-      estConductivity_uScm,
+    const compute = () => {
+      const b = bodyRef.current;
+      const c = contentRef.current;
+      if (!b || !c) return;
+
+      const availH = Math.max(0, b.clientHeight - 8);
+      const availW = Math.max(0, b.clientWidth - 8);
+
+      // ✅ transform scale은 scrollWidth/Height에 영향 거의 없음(=unscaled 기준)
+      const needH = c.scrollHeight;
+      const needW = c.scrollWidth;
+
+      if (needH <= 0 || needW <= 0 || availH <= 0 || availW <= 0) return;
+
+      const sH = availH / needH;
+      const sW = availW / needW;
+      const raw = Math.min(1, sH, sW) * 0.98;
+
+      const needsScroll = raw < minScale;
+
+      if (needsScroll) {
+        setFitNeedsScroll(true);
+        setFitScale(1);
+      } else {
+        setFitNeedsScroll(false);
+        setFitScale(raw);
+      }
+
+      // ✅ 스케일 모드(스크롤 없음)에서는 열릴 때 위로 리셋
+      requestAnimationFrame(() => {
+        const bb = bodyRef.current;
+        if (!bb) return;
+        if (!needsScroll) {
+          bb.scrollTop = 0;
+          bb.scrollLeft = 0;
+        }
+      });
     };
-  }, [localChem]);
 
-  // ✅ 훅 호출 이후에만 조건부 return
+    compute();
+
+    const ro = new ResizeObserver(() => compute());
+    ro.observe(body);
+    ro.observe(content);
+
+    window.addEventListener('resize', compute);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', compute);
+    };
+  }, [isOpen, fitActive]);
+
   if (!isOpen || (!selEndpoint && !selUnit)) return null;
+
+  const isFeedNode = selEndpoint?.data.role === 'feed';
+  const isProductNode = selEndpoint?.data.role === 'product';
+
+  // ✅ 전하 보정 적용 (KPI/Apply에 사용)
+  const { chemUsed, meta: cbMeta } = applyChargeBalance(localChem, cbMode);
+
+  // ✅ 원본 기준(참고용)
+  const rawCationSum = sumMgL(localChem, CATIONS);
+  const rawAnionSum = sumMgL(localChem, ANIONS);
+  const rawNeutralSum = sumMgL(localChem, NEUTRALS);
+  const rawTotalTDS = rawCationSum + rawAnionSum + rawNeutralSum;
+
+  const rawCationMeq = sumMeqL(localChem, CATIONS);
+  const rawAnionMeq = sumMeqL(localChem, ANIONS);
+  const rawChargeBalance_meqL = rawCationMeq - rawAnionMeq;
+
+  // ✅ 보정/사용 기준
+  const cationSum = sumMgL(chemUsed, CATIONS);
+  const anionSum = sumMgL(chemUsed, ANIONS);
+  const neutralSum = sumMgL(chemUsed, NEUTRALS);
+  const totalTDS = cationSum + anionSum + neutralSum;
+
+  const cationMeq = sumMeqL(chemUsed, CATIONS);
+  const anionMeq = sumMeqL(chemUsed, ANIONS);
+  const chargeBalance_meqL = cationMeq - anionMeq;
+
+  const ca_meq = mgL_to_meqL(n0(chemUsed?.ca_mgL), MW.Ca, +2);
+  const mg_meq = mgL_to_meqL(n0(chemUsed?.mg_mgL), MW.Mg, +2);
+  const calcHardness = (ca_meq + mg_meq) * 50.0;
+
+  const hco3_meq = mgL_to_meqL(n0(chemUsed?.hco3_mgL), MW.HCO3, -1);
+  const co3_meq = mgL_to_meqL(n0(chemUsed?.co3_mgL), MW.CO3, -2);
+  const calcAlkalinity = (hco3_meq + co3_meq) * 50.0;
+
+  const estConductivity_uScm = totalTDS * 1.7;
+
+  const subtypeSuggestions = (() => {
+    const wt = String(localFeed?.water_type ?? '');
+    if (!wt) return [];
+    const cats: Record<string, string> = {
+      해수: 'Seawater',
+      기수: 'Brackish',
+      지표수: 'Surface',
+      폐수: 'Waste',
+      재이용수: 'Reuse',
+    };
+    const cat = cats[wt];
+    if (!cat) return [];
+    return WATER_CATALOG.filter((p) => p.category === (cat as any)).map(
+      (p) => p.name,
+    );
+  })();
 
   const applyPreset = (presetId: string) => {
     const preset = WATER_CATALOG.find((p) => p.id === presetId);
@@ -369,38 +722,49 @@ export function UnitInspectorModal(props: InspectorProps) {
     const ions = preset.ions;
     const calcTDS = Object.values(ions).reduce((sum, v) => sum + (v || 0), 0);
 
+    const wt =
+      (preset as any).water_type ?? categoryToWaterType(preset.category);
+    const ws = (preset as any).water_subtype ?? preset.name;
+
     setLocalFeed((prev: any) => ({
       ...prev,
       temperature_C: preset.temp_C,
       ph: preset.ph,
+      water_type: wt,
+      water_subtype: ws,
       tds_mgL: calcTDS,
       temp_min_C: prev?.temp_min_C ?? preset.temp_C,
       temp_max_C: prev?.temp_max_C ?? preset.temp_C,
+      feed_note: (prev?.feed_note ?? '').trim()
+        ? prev.feed_note
+        : `${preset.desc}`,
     }));
 
+    const r3 = (x: any) => roundTo(n0(x), 3);
+
     setLocalChem({
-      nh4_mgL: ions.NH4,
-      k_mgL: ions.K,
-      na_mgL: ions.Na,
-      mg_mgL: ions.Mg,
-      ca_mgL: ions.Ca,
-      sr_mgL: ions.Sr,
-      ba_mgL: ions.Ba,
-      fe_mgL: ions.Fe,
-      mn_mgL: ions.Mn,
+      nh4_mgL: r3(ions.NH4),
+      k_mgL: r3(ions.K),
+      na_mgL: r3(ions.Na),
+      mg_mgL: r3(ions.Mg),
+      ca_mgL: r3(ions.Ca),
+      sr_mgL: r3(ions.Sr),
+      ba_mgL: r3(ions.Ba),
+      fe_mgL: r3(ions.Fe),
+      mn_mgL: r3(ions.Mn),
 
-      hco3_mgL: ions.HCO3,
-      no3_mgL: ions.NO3,
-      cl_mgL: ions.Cl,
-      f_mgL: ions.F,
-      so4_mgL: ions.SO4,
-      br_mgL: ions.Br,
-      po4_mgL: ions.PO4,
-      co3_mgL: ions.CO3,
+      hco3_mgL: r3(ions.HCO3),
+      no3_mgL: r3(ions.NO3),
+      cl_mgL: r3(ions.Cl),
+      f_mgL: r3(ions.F),
+      so4_mgL: r3(ions.SO4),
+      br_mgL: r3(ions.Br),
+      po4_mgL: r3(ions.PO4),
+      co3_mgL: r3(ions.CO3),
 
-      sio2_mgL: ions.SiO2,
-      b_mgL: ions.B,
-      co2_mgL: ions.CO2,
+      sio2_mgL: r3(ions.SiO2),
+      b_mgL: r3(ions.B),
+      co2_mgL: r3(ions.CO2),
 
       alkalinity_mgL_as_CaCO3: null,
       calcium_hardness_mgL_as_CaCO3: null,
@@ -421,24 +785,39 @@ export function UnitInspectorModal(props: InspectorProps) {
 
     setLocalChem((prev: any) => ({
       ...prev,
-      na_mgL: n0(prev?.na_mgL) + addNa,
-      cl_mgL: n0(prev?.cl_mgL) + addCl,
-      mg_mgL: n0(prev?.mg_mgL) + addMg,
-      so4_mgL: n0(prev?.so4_mgL) + addSO4,
+      na_mgL: roundTo(n0(prev?.na_mgL) + addNa, 3),
+      cl_mgL: roundTo(n0(prev?.cl_mgL) + addCl, 3),
+      mg_mgL: roundTo(n0(prev?.mg_mgL) + addMg, 3),
+      so4_mgL: roundTo(n0(prev?.so4_mgL) + addSO4, 3),
     }));
 
     setQuick({ nacl_mgL: 0, mgso4_mgL: 0 });
   };
 
+  // ✅ WAVE처럼 “표에 반영”(입력값 자체를 보정값으로 덮어쓰기)
+  const applyBalanceIntoTable = () => {
+    const r = applyChargeBalance(localChem, cbMode);
+    if (cbMode === 'off') return;
+    setLocalChem({ ...localChem, ...r.chemUsed });
+  };
+
   const handleApply = () => {
     if (isFeedNode) {
+      const chemForApply = cbMode === 'off' ? localChem : chemUsed;
+
       const chemOut = {
-        ...localChem,
-        alkalinity_mgL_as_CaCO3: derived.calcAlkalinity,
-        calcium_hardness_mgL_as_CaCO3: derived.calcHardness,
+        ...chemForApply,
+        alkalinity_mgL_as_CaCO3: calcAlkalinity,
+        calcium_hardness_mgL_as_CaCO3: calcHardness,
       };
 
-      setFeed({ ...localFeed, tds_mgL: derived.totalTDS });
+      setFeed({
+        ...localFeed,
+        tds_mgL: roundTo(totalTDS, 2),
+        water_type: (localFeed.water_type ?? '') || null,
+        water_subtype: (localFeed.water_subtype ?? '') || null,
+        charge_balance_mode: cbMode,
+      });
       setFeedChemistry(chemOut);
     } else if (selUnit && localCfg) {
       updateUnitCfg(selUnit.id, localCfg, setNodes);
@@ -446,16 +825,27 @@ export function UnitInspectorModal(props: InspectorProps) {
     onClose();
   };
 
-  // ✅ Feed 모달은 크게(한 페이지 구성), 스크롤은 “상세 펼침” 시에만
-  const modalShellClass = isFeedNode
-    ? 'w-[calc(100vw-24px)] h-[calc(100vh-24px)] max-w-[1680px]'
-    : 'w-[1040px] max-h-[85vh]';
+  const compact = fitActive;
 
-  const bodyClass = isFeedNode
-    ? detailsOpen
-      ? 'flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent'
-      : 'flex-1 overflow-hidden p-4'
-    : 'flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent';
+  const cbModeLabel: Record<ChargeBalanceMode, string> = {
+    off: 'OFF(원본 그대로)',
+    anions: 'Anions(Cl 우선)',
+    cations: 'Cations(Na 우선)',
+    all: 'All(양·음이온 스케일)',
+  };
+
+  const adjustmentText = (() => {
+    const entries = Object.entries(cbMeta.adjustments_mgL);
+    if (cbMode === 'off' || entries.length === 0) return '';
+    const top = entries
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+      .slice(0, 4)
+      .map(
+        ([k, v]) =>
+          `${k.replace('_mgL', '')} ${v > 0 ? '+' : ''}${fmtNumber(v, 3)} mg/L`,
+      );
+    return top.join(', ');
+  })();
 
   return (
     <div
@@ -463,7 +853,7 @@ export function UnitInspectorModal(props: InspectorProps) {
       onClick={onClose}
     >
       <div
-        className={`${modalShellClass} flex flex-col rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl ring-1 ring-white/5 overflow-hidden`}
+        className="w-[min(1420px,96vw)] max-h-[96vh] flex flex-col rounded-xl border border-slate-800 bg-slate-950 shadow-2xl ring-1 ring-white/5 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -476,19 +866,33 @@ export function UnitInspectorModal(props: InspectorProps) {
             />
             <h2 className="text-sm font-bold text-slate-100 tracking-wide">
               {isFeedNode
-                ? '원수(Feed) 수질 입력'
+                ? '원수(FEED) 수질 분석'
                 : selUnit
                   ? `${(selUnit.data as UnitData).kind} 설정`
                   : '설정'}
             </h2>
-            {isFeedNode ? (
+            {isFeedNode && (
               <span className="text-[11px] text-slate-500">
                 (이온 조성 → TDS/경도/알칼리도 자동 계산)
               </span>
-            ) : null}
+            )}
           </div>
 
           <div className="flex items-center gap-2">
+            {isFeedNode && (
+              <button
+                onClick={() => setFitMode((v) => !v)}
+                className={`px-3 py-1 rounded text-xs font-bold border transition-colors ${
+                  fitMode
+                    ? 'text-emerald-200 bg-emerald-900/20 border-emerald-900/40 hover:bg-emerald-900/30'
+                    : 'text-slate-200 bg-slate-800 border-slate-700 hover:bg-slate-700'
+                }`}
+                title="상세 닫힘 상태에서 화면에 맞게 자동 축소/확대합니다."
+              >
+                화면 맞춤 {fitMode ? 'ON' : 'OFF'}
+              </button>
+            )}
+
             {isProductNode ? (
               <button
                 onClick={onClose}
@@ -516,520 +920,662 @@ export function UnitInspectorModal(props: InspectorProps) {
         </div>
 
         {/* Body */}
-        <div className={bodyClass}>
-          {isFeedNode ? (
-            <div className="space-y-3">
-              {/* 상단: 프리셋 + 기본 입력 */}
-              <div className="grid grid-cols-12 gap-3">
-                {/* Preset */}
-                <div className="col-span-12 lg:col-span-7 p-3 rounded-xl border border-slate-800 bg-slate-950/30">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-[11px] font-bold text-slate-300 tracking-wider">
-                      🌊 프리셋 라이브러리
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      표준 조성 불러오기
-                    </div>
-                  </div>
-                  <select
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
-                    onChange={(e) => applyPreset(e.target.value)}
-                    defaultValue=""
-                  >
-                    <option value="" disabled>
-                      -- 물 조성 선택 --
-                    </option>
-                    <optgroup label="Seawater">
-                      {WATER_CATALOG.filter(
-                        (w) => w.category === 'Seawater',
-                      ).map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Brackish Water">
-                      {WATER_CATALOG.filter(
-                        (w) => w.category === 'Brackish',
-                      ).map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Wastewater & Reuse">
-                      {WATER_CATALOG.filter((w) =>
-                        ['Waste', 'Reuse'].includes(w.category),
-                      ).map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
-                </div>
+        <div
+          ref={bodyRef}
+          className={`flex-1 ${
+            fitActive
+              ? fitNeedsScroll
+                ? 'overflow-auto'
+                : 'overflow-hidden'
+              : 'overflow-y-auto'
+          } ${compact ? 'p-3' : 'p-4'} scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent`}
+        >
+          {/* ✅ 핵심 수정:
+              contentSize wrapper 제거 (ReferenceError + 찝힘 원인)
+              contentRef에만 scale 적용 */}
+          <div
+            ref={contentRef}
+            className={fitActive ? 'mx-auto w-full max-w-full' : 'w-full'}
+            style={
+              fitActive && !fitNeedsScroll
+                ? {
+                    transform: `scale(${fitScale})`,
+                    transformOrigin: 'top center',
+                    width: '100%',
+                    maxWidth: '100%',
+                  }
+                : undefined
+            }
+          >
+            {isFeedNode ? (
+              <div className={compact ? 'space-y-3' : 'space-y-4'}>
+                {/* Top */}
+                <div className="grid grid-cols-12 gap-4">
+                  <div className="col-span-12 lg:col-span-7 p-3 bg-slate-900/40 border border-slate-800 rounded-lg">
+                    <label className="text-[10px] font-bold text-blue-400 mb-2 uppercase tracking-wider block">
+                      프리셋 라이브러리
+                    </label>
 
-                {/* 핵심 값 + Quick Entry */}
-                <div className="col-span-12 lg:col-span-5 p-3 rounded-xl border border-slate-800 bg-slate-950/30">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Field label={`온도 (${unitLabel('temp', unitMode)})`}>
-                      <Input
-                        className="h-9 text-center font-mono"
-                        value={localFeed.temperature_C}
-                        onChange={(e) =>
-                          setLocalFeed({
-                            ...localFeed,
-                            temperature_C: Number(e.target.value),
-                          })
-                        }
-                      />
-                    </Field>
+                    <select
+                      className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                      onChange={(e) => applyPreset(e.target.value)}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>
+                        -- 물 조성 선택 --
+                      </option>
 
-                    <Field label="pH (25°C 기준)">
-                      <Input
-                        className="h-9 text-center font-mono"
-                        value={localFeed.ph}
-                        min={0}
-                        max={14}
-                        onChange={(e) =>
-                          setLocalFeed({
-                            ...localFeed,
-                            ph: clampf(Number(e.target.value), 0, 14),
-                          })
-                        }
-                      />
-                    </Field>
+                      <optgroup label="해수">
+                        {WATER_CATALOG.filter(
+                          (w) => w.category === 'Seawater',
+                        ).map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name}
+                          </option>
+                        ))}
+                      </optgroup>
 
-                    <div className="col-span-2">
-                      <Field label={`유량 (${unitLabel('flow', unitMode)})`}>
-                        <Input
-                          className="h-9 font-bold text-emerald-300 text-right font-mono"
-                          value={localFeed.flow_m3h}
+                      <optgroup label="기수/지하수">
+                        {WATER_CATALOG.filter(
+                          (w) => w.category === 'Brackish',
+                        ).map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name}
+                          </option>
+                        ))}
+                      </optgroup>
+
+                      <optgroup label="지표수(강/호수)">
+                        {WATER_CATALOG.filter(
+                          (w) => w.category === 'Surface',
+                        ).map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name}
+                          </option>
+                        ))}
+                      </optgroup>
+
+                      <optgroup label="폐수(산업/공정)">
+                        {WATER_CATALOG.filter(
+                          (w) => w.category === 'Waste',
+                        ).map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name}
+                          </option>
+                        ))}
+                      </optgroup>
+
+                      <optgroup label="재이용수(하수처리수)">
+                        {WATER_CATALOG.filter(
+                          (w) => w.category === 'Reuse',
+                        ).map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+
+                    <div className="mt-3 grid grid-cols-12 gap-3">
+                      <div className="col-span-12 md:col-span-4">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                          원수 분류
+                        </label>
+                        <select
+                          className="w-full h-9 bg-slate-950 border border-slate-700 rounded px-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                          value={String(localFeed.water_type ?? '')}
                           onChange={(e) =>
                             setLocalFeed({
                               ...localFeed,
-                              flow_m3h: Number(e.target.value),
+                              water_type: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="">(선택)</option>
+                          {WATER_TYPE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="col-span-12 md:col-span-8">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                          원수 세부 분류(출처)
+                        </label>
+                        <input
+                          type="text"
+                          list="water-subtype-suggestions"
+                          className="w-full h-9 bg-slate-950 border border-slate-700 rounded px-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                          value={String(localFeed.water_subtype ?? '')}
+                          placeholder="예: 태평양 평균 / 아라비아만 / 냉각탑 블로다운 ..."
+                          onChange={(e) =>
+                            setLocalFeed({
+                              ...localFeed,
+                              water_subtype: e.target.value,
                             })
                           }
                         />
-                      </Field>
+                        <datalist id="water-subtype-suggestions">
+                          {subtypeSuggestions.map((s) => (
+                            <option key={s} value={s} />
+                          ))}
+                        </datalist>
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                        추가 정보(메모)
+                      </label>
+                      <textarea
+                        className="w-full h-16 bg-slate-950 border border-slate-700 rounded px-2 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                        value={localFeed.feed_note ?? ''}
+                        placeholder="(선택) 원수 특이사항/전처리/샘플링 정보 등"
+                        onChange={(e) =>
+                          setLocalFeed({
+                            ...localFeed,
+                            feed_note: e.target.value,
+                          })
+                        }
+                      />
                     </div>
                   </div>
 
-                  {/* Quick Entry */}
-                  <div className="mt-3 pt-3 border-t border-slate-800/80">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-[11px] font-bold text-slate-300 tracking-wider">
-                        ⚡ 빠른 입력(염)
-                      </div>
-                      <div className="text-[10px] text-slate-500">
-                        입력값을 이온에 분배
+                  <div className="col-span-12 lg:col-span-5 p-3 bg-slate-900/40 border border-slate-800 rounded-lg">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label={`온도 (${unitLabel('temp', unitMode)})`}>
+                        <Input
+                          className="h-9 text-center font-mono"
+                          value={localFeed.temperature_C}
+                          onChange={(e) =>
+                            setLocalFeed({
+                              ...localFeed,
+                              temperature_C: Number(e.target.value),
+                            })
+                          }
+                        />
+                      </Field>
+
+                      <Field label="pH (@25°C)">
+                        <Input
+                          className="h-9 text-center font-mono"
+                          value={localFeed.ph}
+                          min={0}
+                          max={14}
+                          onChange={(e) =>
+                            setLocalFeed({
+                              ...localFeed,
+                              ph: clampf(Number(e.target.value), 0, 14),
+                            })
+                          }
+                        />
+                      </Field>
+
+                      <div className="col-span-2">
+                        <Field
+                          label={`유입 유량 (${unitLabel('flow', unitMode)})`}
+                        >
+                          <Input
+                            className="h-9 font-bold text-emerald-400 text-right font-mono"
+                            value={localFeed.flow_m3h}
+                            onChange={(e) =>
+                              setLocalFeed({
+                                ...localFeed,
+                                flow_m3h: Number(e.target.value),
+                              })
+                            }
+                          />
+                        </Field>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <Field label="NaCl (mg/L)">
-                        <Input
-                          className="h-9 text-right font-mono"
-                          value={quick.nacl_mgL}
-                          onChange={(e) =>
-                            setQuick({
-                              ...quick,
-                              nacl_mgL: Number(e.target.value),
-                            })
-                          }
-                        />
-                      </Field>
-                      <Field label="MgSO4 (mg/L)">
-                        <Input
-                          className="h-9 text-right font-mono"
-                          value={quick.mgso4_mgL}
-                          onChange={(e) =>
-                            setQuick({
-                              ...quick,
-                              mgso4_mgL: Number(e.target.value),
-                            })
-                          }
-                        />
-                      </Field>
+                    <div className="mt-3 pt-3 border-t border-slate-800/80">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          빠른 입력(염 혼합)
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          입력값을 이온으로 분해
+                        </div>
+                      </div>
 
-                      <div className="col-span-2 flex justify-end">
-                        <button
-                          onClick={applyQuickEntry}
-                          className="px-3 py-1.5 rounded-md text-xs font-bold text-white bg-slate-700 hover:bg-slate-600 border border-slate-600"
-                        >
-                          이온에 적용
-                        </button>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="NaCl (mg/L)">
+                          <Input
+                            className="h-9 text-right font-mono"
+                            value={quick.nacl_mgL}
+                            onChange={(e) =>
+                              setQuick({
+                                ...quick,
+                                nacl_mgL: Number(e.target.value),
+                              })
+                            }
+                          />
+                        </Field>
+                        <Field label="MgSO4 (mg/L)">
+                          <Input
+                            className="h-9 text-right font-mono"
+                            value={quick.mgso4_mgL}
+                            onChange={(e) =>
+                              setQuick({
+                                ...quick,
+                                mgso4_mgL: Number(e.target.value),
+                              })
+                            }
+                          />
+                        </Field>
+                        <div className="col-span-2 flex justify-end">
+                          <button
+                            onClick={applyQuickEntry}
+                            className="px-3 py-2 rounded text-xs font-bold text-white bg-slate-700 hover:bg-slate-600 border border-slate-600"
+                          >
+                            이온에 반영
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ✅ 전하 보정 (WAVE) */}
+                    <div className="mt-3 pt-3 border-t border-slate-800/80">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          전하 밸런스 보정(WAVE)
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          C≈A 되도록 자동 보정
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-12 gap-2 items-center">
+                        <div className="col-span-8">
+                          <select
+                            className="w-full h-9 bg-slate-950 border border-slate-700 rounded px-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                            value={cbMode}
+                            onChange={(e) =>
+                              setCbMode(e.target.value as ChargeBalanceMode)
+                            }
+                          >
+                            <option value="off">OFF(원본 그대로)</option>
+                            <option value="anions">Anions(Cl 우선)</option>
+                            <option value="cations">Cations(Na 우선)</option>
+                            <option value="all">All(양·음이온 스케일)</option>
+                          </select>
+                        </div>
+                        <div className="col-span-4 flex justify-end">
+                          <button
+                            onClick={applyBalanceIntoTable}
+                            disabled={cbMode === 'off'}
+                            className={`px-3 py-2 rounded text-xs font-bold border ${
+                              cbMode === 'off'
+                                ? 'text-slate-500 bg-slate-900/30 border-slate-800 cursor-not-allowed'
+                                : 'text-white bg-slate-700 hover:bg-slate-600 border-slate-600'
+                            }`}
+                            title="WAVE처럼 이온표 숫자 자체를 보정값으로 덮어씁니다."
+                          >
+                            표에 반영
+                          </button>
+                        </div>
+
+                        <div className="col-span-12 text-[10px] text-slate-500">
+                          모드:{' '}
+                          <span className="text-slate-200 font-semibold">
+                            {cbModeLabel[cbMode]}
+                          </span>
+                          {' · '}
+                          원본 Δ(C-A):{' '}
+                          <span className="font-mono text-slate-300">
+                            {fmtNumber(rawChargeBalance_meqL, 3)}
+                          </span>{' '}
+                          meq/L
+                          {' → '}
+                          보정 Δ(C-A):{' '}
+                          <span className="font-mono text-emerald-300">
+                            {fmtNumber(chargeBalance_meqL, 3)}
+                          </span>{' '}
+                          meq/L
+                        </div>
+                        {adjustmentText && (
+                          <div className="col-span-12 text-[10px] text-slate-500">
+                            보정내용(상위):{' '}
+                            <span className="text-slate-300 font-mono">
+                              {adjustmentText}
+                            </span>
+                          </div>
+                        )}
+                        {cbMeta.note && (
+                          <div className="col-span-12 text-[10px] text-amber-300/80">
+                            {cbMeta.note}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* 통계 */}
-              <div className="grid grid-cols-2 lg:grid-cols-6 gap-2">
-                <StatCard
-                  label="TDS"
-                  value={derived.totalTDS.toFixed(2)}
-                  unit="mg/L"
-                  tone="good"
-                />
-                <StatCard
-                  label="경도(Hardness)"
-                  value={derived.calcHardness.toFixed(1)}
-                  unit="as CaCO3"
-                />
-                <StatCard
-                  label="알칼리도(Alkalinity)"
-                  value={derived.calcAlkalinity.toFixed(1)}
-                  unit="as CaCO3"
-                />
-                <StatCard
-                  label="전하 밸런스"
-                  value={derived.chargeBalance_meqL.toFixed(6)}
-                  unit="meq/L"
-                  tone={
-                    Math.abs(derived.chargeBalance_meqL) > 0.5
-                      ? 'warn'
-                      : 'default'
-                  }
-                />
-                <StatCard
-                  label="전도도(추정)"
-                  value={derived.estConductivity_uScm.toFixed(1)}
-                  unit="µS/cm"
-                />
-                <StatCard
-                  label="meq 합"
-                  value={`C ${derived.cationMeq.toFixed(3)} / A ${derived.anionMeq.toFixed(3)}`}
-                />
-              </div>
+                {/* KPI */}
+                <div className="grid grid-cols-12 gap-3">
+                  <div className="col-span-12 md:col-span-4 bg-slate-900/55 border border-slate-800 rounded-lg p-3">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">
+                      TDS {cbMode !== 'off' ? '(보정 적용)' : ''}
+                    </div>
+                    <div className="text-xl font-mono text-emerald-400 font-bold">
+                      {fmtNumber(totalTDS, 1)}{' '}
+                      <span className="text-xs font-normal text-slate-600">
+                        mg/L
+                      </span>
+                    </div>
+                    {cbMode !== 'off' && (
+                      <div className="text-[10px] text-slate-500 mt-1">
+                        원본:{' '}
+                        <span className="font-mono">
+                          {fmtNumber(rawTotalTDS, 1)}
+                        </span>{' '}
+                        mg/L
+                      </div>
+                    )}
+                  </div>
 
-              {/* 이온 조성 */}
-              <div className="grid grid-cols-12 gap-3">
-                <div className="col-span-12 flex items-end justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1.5 h-4 rounded bg-blue-500" />
-                    <h3 className="text-sm font-bold text-slate-200">
+                  <div className="col-span-12 md:col-span-4 bg-slate-900/55 border border-slate-800 rounded-lg p-3">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">
+                      경도(Hardness)
+                    </div>
+                    <div className="text-xl font-mono text-blue-300 font-semibold">
+                      {fmtNumber(calcHardness, 1)}{' '}
+                      <span className="text-xs font-normal text-slate-600">
+                        as CaCO3
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="col-span-12 md:col-span-4 bg-slate-900/55 border border-slate-800 rounded-lg p-3">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">
+                      알칼리도(Alkalinity)
+                    </div>
+                    <div className="text-xl font-mono text-blue-300 font-semibold">
+                      {fmtNumber(calcAlkalinity, 1)}{' '}
+                      <span className="text-xs font-normal text-slate-600">
+                        as CaCO3
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="col-span-12 grid grid-cols-3 gap-3">
+                    <div className="bg-slate-900/35 border border-slate-800 rounded-lg p-3">
+                      <div className="text-[10px] text-slate-500 uppercase">
+                        전하 밸런스
+                      </div>
+                      <div className="text-sm font-mono text-slate-200">
+                        {fmtNumber(chargeBalance_meqL, 3)}{' '}
+                        <span className="text-slate-500">meq/L</span>
+                      </div>
+                      {cbMode !== 'off' && (
+                        <div className="text-[10px] text-slate-500 mt-1">
+                          원본:{' '}
+                          <span className="font-mono">
+                            {fmtNumber(rawChargeBalance_meqL, 3)}
+                          </span>{' '}
+                          meq/L
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-slate-900/35 border border-slate-800 rounded-lg p-3">
+                      <div className="text-[10px] text-slate-500 uppercase">
+                        전도도(추정)
+                      </div>
+                      <div className="text-sm font-mono text-slate-200">
+                        {fmtNumber(estConductivity_uScm, 0)}{' '}
+                        <span className="text-slate-500">µS/cm</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900/35 border border-slate-800 rounded-lg p-3">
+                      <div className="text-[10px] text-slate-500 uppercase">
+                        meq/L 합
+                      </div>
+                      <div className="text-sm font-mono text-slate-200">
+                        C {fmtNumber(cationMeq, 3)} / A {fmtNumber(anionMeq, 3)}
+                      </div>
+                      {cbMode !== 'off' && (
+                        <div className="text-[10px] text-slate-500 mt-1">
+                          원본: C{' '}
+                          <span className="font-mono">
+                            {fmtNumber(rawCationMeq, 3)}
+                          </span>{' '}
+                          / A{' '}
+                          <span className="font-mono">
+                            {fmtNumber(rawAnionMeq, 3)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ions (입력은 원본 그대로) */}
+                <div className="pt-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xs font-bold text-slate-300 flex items-center gap-2">
+                      <span className="w-1 h-4 bg-blue-500 rounded-sm" />
                       이온 조성 입력(전체)
                     </h3>
+                    <div className="text-[10px] text-slate-500">
+                      mg/L 입력 → ppm(CaCO3)/meq/L 자동 계산
+                    </div>
                   </div>
-                  <div className="text-[10px] text-slate-500">
-                    mg/L 입력 · CaCO3 환산(ppm) · meq/L 자동 계산
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    <IonTable
+                      title="CATIONS (+)"
+                      defs={CATIONS}
+                      chem={localChem}
+                      accent="text-blue-300"
+                      onChange={(k, v) =>
+                        setLocalChem({ ...localChem, [k]: v })
+                      }
+                      showDerived
+                      compact={compact}
+                    />
+                    <IonTable
+                      title="ANIONS (-)"
+                      defs={ANIONS}
+                      chem={localChem}
+                      accent="text-rose-300"
+                      onChange={(k, v) =>
+                        setLocalChem({ ...localChem, [k]: v })
+                      }
+                      showDerived
+                      compact={compact}
+                    />
+                    <IonTable
+                      title="NEUTRALS"
+                      defs={NEUTRALS}
+                      chem={localChem}
+                      accent="text-emerald-300"
+                      onChange={(k, v) =>
+                        setLocalChem({ ...localChem, [k]: v })
+                      }
+                      showDerived={false}
+                      compact={compact}
+                    />
                   </div>
                 </div>
 
-                {/* Cations */}
-                <div className="col-span-12 lg:col-span-4 p-3 rounded-xl border border-slate-800 bg-slate-950/25">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-[11px] font-bold text-blue-300 uppercase tracking-wider">
-                      Cations (+)
-                    </div>
-                    <div className="text-[11px] font-mono text-slate-400 tabular-nums">
-                      {derived.cationSum.toFixed(2)} mg/L
-                    </div>
+                {/* Details */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-300 flex items-center gap-2">
+                      <span className="w-1 h-4 bg-slate-500 rounded-sm" />
+                      상세 입력 (필요할 때만 펼치기)
+                    </h3>
+                    <button
+                      onClick={() => setDetailsOpen((v) => !v)}
+                      className="px-3 py-1.5 rounded text-xs font-bold text-slate-200 bg-slate-800 border border-slate-700 hover:bg-slate-700"
+                    >
+                      {detailsOpen ? '접기' : '펼치기'}
+                    </button>
                   </div>
-                  <div className="grid grid-cols-[44px_1fr_78px_78px] gap-2 px-2 mb-2 text-[10px] text-slate-500 uppercase tracking-wider">
-                    <div>Ion</div>
-                    <div className="text-right">mg/L</div>
-                    <div className="text-right">ppm CaCO3</div>
-                    <div className="text-right">meq/L</div>
-                  </div>
-                  <div className="space-y-1">
-                    {CATIONS.map((d) => (
-                      <IonRow
-                        key={d.key}
-                        def={d}
-                        value={localChem?.[d.key]}
-                        onChange={(v) =>
-                          setLocalChem({ ...localChem, [d.key]: v })
-                        }
-                        showDerived
-                      />
-                    ))}
-                  </div>
-                </div>
 
-                {/* Anions */}
-                <div className="col-span-12 lg:col-span-4 p-3 rounded-xl border border-slate-800 bg-slate-950/25">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-[11px] font-bold text-rose-300 uppercase tracking-wider">
-                      Anions (-)
-                    </div>
-                    <div className="text-[11px] font-mono text-slate-400 tabular-nums">
-                      {derived.anionSum.toFixed(2)} mg/L
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-[44px_1fr_78px_78px] gap-2 px-2 mb-2 text-[10px] text-slate-500 uppercase tracking-wider">
-                    <div>Ion</div>
-                    <div className="text-right">mg/L</div>
-                    <div className="text-right">ppm CaCO3</div>
-                    <div className="text-right">meq/L</div>
-                  </div>
-                  <div className="space-y-1">
-                    {ANIONS.map((d) => (
-                      <IonRow
-                        key={d.key}
-                        def={d}
-                        value={localChem?.[d.key]}
-                        onChange={(v) =>
-                          setLocalChem({ ...localChem, [d.key]: v })
-                        }
-                        showDerived
-                      />
-                    ))}
-                  </div>
-                </div>
+                  {detailsOpen && (
+                    <div className="mt-3 grid grid-cols-12 gap-4">
+                      <div className="col-span-12 lg:col-span-8 p-3 bg-slate-900/30 border border-slate-800 rounded-lg">
+                        <div className="grid grid-cols-12 gap-3">
+                          <div className="col-span-12 md:col-span-4">
+                            <Field label="최저 온도 (°C)">
+                              <Input
+                                className="h-9 text-right font-mono"
+                                value={localFeed.temp_min_C ?? ''}
+                                onChange={(e) =>
+                                  setLocalFeed({
+                                    ...localFeed,
+                                    temp_min_C: Number(e.target.value),
+                                  })
+                                }
+                              />
+                            </Field>
+                          </div>
 
-                {/* Neutrals */}
-                <div className="col-span-12 lg:col-span-4 p-3 rounded-xl border border-slate-800 bg-slate-950/25">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-[11px] font-bold text-emerald-300 uppercase tracking-wider">
-                      Neutrals
+                          <div className="col-span-12 md:col-span-4">
+                            <Field label="설계 온도 (°C)">
+                              <Input
+                                className="h-9 text-right font-mono"
+                                value={localFeed.temperature_C ?? ''}
+                                onChange={(e) =>
+                                  setLocalFeed({
+                                    ...localFeed,
+                                    temperature_C: Number(e.target.value),
+                                  })
+                                }
+                              />
+                            </Field>
+                          </div>
+
+                          <div className="col-span-12 md:col-span-4">
+                            <Field label="최고 온도 (°C)">
+                              <Input
+                                className="h-9 text-right font-mono"
+                                value={localFeed.temp_max_C ?? ''}
+                                onChange={(e) =>
+                                  setLocalFeed({
+                                    ...localFeed,
+                                    temp_max_C: Number(e.target.value),
+                                  })
+                                }
+                              />
+                            </Field>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="col-span-12 lg:col-span-4 p-3 bg-slate-900/30 border border-slate-800 rounded-lg">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                          고형물/유기물(참고)
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Field label="탁도 (NTU)">
+                            <Input
+                              className="h-9 text-right font-mono"
+                              value={localFeed.turbidity_ntu ?? ''}
+                              onChange={(e) =>
+                                setLocalFeed({
+                                  ...localFeed,
+                                  turbidity_ntu: Number(e.target.value),
+                                })
+                              }
+                            />
+                          </Field>
+                          <Field label="TSS (mg/L)">
+                            <Input
+                              className="h-9 text-right font-mono"
+                              value={localFeed.tss_mgL ?? ''}
+                              onChange={(e) =>
+                                setLocalFeed({
+                                  ...localFeed,
+                                  tss_mgL: Number(e.target.value),
+                                })
+                              }
+                            />
+                          </Field>
+                          <Field label="SDI15">
+                            <Input
+                              className="h-9 text-right font-mono"
+                              value={localFeed.sdi15 ?? ''}
+                              onChange={(e) =>
+                                setLocalFeed({
+                                  ...localFeed,
+                                  sdi15: Number(e.target.value),
+                                })
+                              }
+                            />
+                          </Field>
+                          <Field label="TOC (mg/L)">
+                            <Input
+                              className="h-9 text-right font-mono"
+                              value={localFeed.toc_mgL ?? ''}
+                              onChange={(e) =>
+                                setLocalFeed({
+                                  ...localFeed,
+                                  toc_mgL: Number(e.target.value),
+                                })
+                              }
+                            />
+                          </Field>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-[11px] font-mono text-slate-400 tabular-nums">
-                      {derived.neutralSum.toFixed(2)} mg/L
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-[44px_1fr_78px_78px] gap-2 px-2 mb-2 text-[10px] text-slate-500 uppercase tracking-wider">
-                    <div>Ion</div>
-                    <div className="text-right">mg/L</div>
-                    <div className="text-right">ppm CaCO3</div>
-                    <div className="text-right">meq/L</div>
-                  </div>
-                  <div className="space-y-1">
-                    {NEUTRALS.map((d) => (
-                      <IonRow
-                        key={d.key}
-                        def={d}
-                        value={localChem?.[d.key]}
-                        onChange={(v) =>
-                          setLocalChem({ ...localChem, [d.key]: v })
-                        }
-                        showDerived={false}
-                      />
-                    ))}
-                  </div>
+                  )}
                 </div>
               </div>
+            ) : selUnit && localCfg ? (
+              (() => {
+                const u = selUnit.data as UnitData;
+                const kind = u.kind as UnitKind;
+                const proxyUnit = { ...u, cfg: localCfg };
+                const updateCfg = (newCfg: any) => setLocalCfg(newCfg);
 
-              {/* ✅ 상세 입력(필요할 때만 펼치기) : 열릴 때 detailsOpen=true → 그때만 스크롤 생김 */}
-              <details
-                className="rounded-xl border border-slate-800 bg-slate-950/20"
-                open={detailsOpen}
-                onToggle={(e) =>
-                  setDetailsOpen((e.currentTarget as HTMLDetailsElement).open)
-                }
-              >
-                <summary className="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200 flex items-center justify-between">
-                  <span>상세 입력(수질 메타/고형물/메모)</span>
-                  <span className="text-[11px] text-slate-500">
-                    (필요할 때만 펼치기)
-                  </span>
-                </summary>
+                if (kind === 'HRRO')
+                  return <HRROEditor node={proxyUnit} onChange={updateCfg} />;
+                if (kind === 'RO')
+                  return (
+                    <ROEditor node={proxyUnit} onChange={updateCfg as any} />
+                  );
+                if (kind === 'UF')
+                  return (
+                    <UFEditor node={proxyUnit} onChange={updateCfg as any} />
+                  );
+                if (kind === 'NF')
+                  return (
+                    <NFEditor node={proxyUnit} onChange={updateCfg as any} />
+                  );
+                if (kind === 'MF')
+                  return (
+                    <MFEditor node={proxyUnit} onChange={updateCfg as any} />
+                  );
+                if (kind === 'PUMP')
+                  return (
+                    <PumpEditor node={proxyUnit as any} onChange={updateCfg} />
+                  );
 
-                <div className="px-3 pb-3 pt-1 space-y-3">
-                  <div className="grid grid-cols-12 gap-3">
-                    <div className="col-span-12 lg:col-span-8 p-3 rounded-xl border border-slate-800 bg-slate-950/20">
-                      <div className="grid grid-cols-12 gap-3">
-                        <div className="col-span-12 md:col-span-6">
-                          <Field label="Water Type(선택)">
-                            <Input
-                              className="h-9"
-                              value={localFeed.water_type ?? ''}
-                              placeholder="예) Seawater"
-                              onChange={(e) =>
-                                setLocalFeed({
-                                  ...localFeed,
-                                  water_type: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                        </div>
-                        <div className="col-span-12 md:col-span-6">
-                          <Field label="Water Sub-type(선택)">
-                            <Input
-                              className="h-9"
-                              value={localFeed.water_subtype ?? ''}
-                              placeholder="예) Open intake"
-                              onChange={(e) =>
-                                setLocalFeed({
-                                  ...localFeed,
-                                  water_subtype: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                        </div>
-
-                        <div className="col-span-12 md:col-span-4">
-                          <Field label="온도 최소(°C)">
-                            <Input
-                              className="h-9 text-right font-mono"
-                              value={localFeed.temp_min_C ?? ''}
-                              onChange={(e) =>
-                                setLocalFeed({
-                                  ...localFeed,
-                                  temp_min_C: Number(e.target.value),
-                                })
-                              }
-                            />
-                          </Field>
-                        </div>
-                        <div className="col-span-12 md:col-span-4">
-                          <Field label="설계 온도(°C)">
-                            <Input
-                              className="h-9 text-right font-mono"
-                              value={localFeed.temperature_C ?? ''}
-                              onChange={(e) =>
-                                setLocalFeed({
-                                  ...localFeed,
-                                  temperature_C: Number(e.target.value),
-                                })
-                              }
-                            />
-                          </Field>
-                        </div>
-                        <div className="col-span-12 md:col-span-4">
-                          <Field label="온도 최대(°C)">
-                            <Input
-                              className="h-9 text-right font-mono"
-                              value={localFeed.temp_max_C ?? ''}
-                              onChange={(e) =>
-                                setLocalFeed({
-                                  ...localFeed,
-                                  temp_max_C: Number(e.target.value),
-                                })
-                              }
-                            />
-                          </Field>
-                        </div>
-
-                        <div className="col-span-12">
-                          <Field label="추가 메모(선택)">
-                            <textarea
-                              className="w-full h-20 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
-                              value={localFeed.feed_note ?? ''}
-                              placeholder="예) 계절 변동, 취수 조건, 전처리 특이사항 등"
-                              onChange={(e) =>
-                                setLocalFeed({
-                                  ...localFeed,
-                                  feed_note: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="col-span-12 lg:col-span-4 p-3 rounded-xl border border-slate-800 bg-slate-950/20">
-                      <div className="text-[11px] font-bold text-slate-300 tracking-wider mb-2">
-                        고형물 / 유기물(선택)
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Field label="탁도(NTU)">
-                          <Input
-                            className="h-9 text-right font-mono"
-                            value={localFeed.turbidity_ntu ?? ''}
-                            onChange={(e) =>
-                              setLocalFeed({
-                                ...localFeed,
-                                turbidity_ntu: Number(e.target.value),
-                              })
-                            }
-                          />
-                        </Field>
-                        <Field label="TSS(mg/L)">
-                          <Input
-                            className="h-9 text-right font-mono"
-                            value={localFeed.tss_mgL ?? ''}
-                            onChange={(e) =>
-                              setLocalFeed({
-                                ...localFeed,
-                                tss_mgL: Number(e.target.value),
-                              })
-                            }
-                          />
-                        </Field>
-                        <Field label="SDI15">
-                          <Input
-                            className="h-9 text-right font-mono"
-                            value={localFeed.sdi15 ?? ''}
-                            onChange={(e) =>
-                              setLocalFeed({
-                                ...localFeed,
-                                sdi15: Number(e.target.value),
-                              })
-                            }
-                          />
-                        </Field>
-                        <Field label="TOC(mg/L)">
-                          <Input
-                            className="h-9 text-right font-mono"
-                            value={localFeed.toc_mgL ?? ''}
-                            onChange={(e) =>
-                              setLocalFeed({
-                                ...localFeed,
-                                toc_mgL: Number(e.target.value),
-                              })
-                            }
-                          />
-                        </Field>
-                      </div>
-                    </div>
+                return (
+                  <div className="text-sm text-red-300">
+                    Unknown Unit Type: {kind}
                   </div>
-                </div>
-              </details>
-            </div>
-          ) : selUnit && localCfg ? (
-            (() => {
-              const u = selUnit.data as UnitData;
-              const kind = u.kind as UnitKind;
-              const proxyUnit = { ...u, cfg: localCfg };
-              const updateCfg = (newCfg: any) => setLocalCfg(newCfg);
-
-              if (kind === 'HRRO')
-                return <HRROEditor node={proxyUnit} onChange={updateCfg} />;
-              if (kind === 'RO')
-                return (
-                  <ROEditor node={proxyUnit} onChange={updateCfg as any} />
                 );
-              if (kind === 'UF')
-                return (
-                  <UFEditor node={proxyUnit} onChange={updateCfg as any} />
-                );
-              if (kind === 'NF')
-                return (
-                  <NFEditor node={proxyUnit} onChange={updateCfg as any} />
-                );
-              if (kind === 'MF')
-                return (
-                  <MFEditor node={proxyUnit} onChange={updateCfg as any} />
-                );
-              if (kind === 'PUMP')
-                return (
-                  <PumpEditor node={proxyUnit as any} onChange={updateCfg} />
-                );
-
-              return (
-                <div className="text-sm text-red-300">
-                  Unknown Unit Type: {kind}
-                </div>
-              );
-            })()
-          ) : isProductNode ? (
-            <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-60">
-              <div className="text-4xl mb-2">🏁</div>
-              <p className="text-sm font-medium">최종 생산수(Product)</p>
-              <p className="text-xs">시뮬레이션 실행 후 결과가 표시됩니다.</p>
-            </div>
-          ) : (
-            <div className="text-sm text-slate-400">
-              선택된 노드가 없습니다.
-            </div>
-          )}
+              })()
+            ) : isProductNode ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-60">
+                <div className="text-4xl mb-2">🏁</div>
+                <p className="text-sm font-medium">최종 생산수</p>
+                <p className="text-xs">시뮬레이션 결과에서 확인</p>
+              </div>
+            ) : (
+              <div className="text-sm text-slate-400">
+                선택된 노드가 없습니다.
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -1086,8 +1632,8 @@ export function GlobalOptionsModal(props: GlobalOptionsProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/50">
-          <h2 className="text-sm font-bold text-slate-100 tracking-wide">
-            전역 옵션(Global)
+          <h2 className="text-sm font-bold text-slate-100 uppercase tracking-wide">
+            Global Project Options
           </h2>
           <button
             onClick={onClose}
@@ -1108,10 +1654,10 @@ export function GlobalOptionsModal(props: GlobalOptionsProps) {
               />
               <div className="flex flex-col">
                 <span className="text-sm font-bold text-blue-100">
-                  자동 설정 모드
+                  Auto-Configuration Mode
                 </span>
                 <span className="text-[10px] text-blue-300/70">
-                  유량 기반으로 소자 수를 자동 계산
+                  Automatically calculate element quantity based on flow
                 </span>
               </div>
             </label>
@@ -1120,7 +1666,7 @@ export function GlobalOptionsModal(props: GlobalOptionsProps) {
           <div className="space-y-4">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">
-                기본 멤브레인 모델
+                Default Membrane Model
               </label>
               <MembraneSelect
                 unitType={stageTypeHint || 'RO'}
@@ -1135,7 +1681,7 @@ export function GlobalOptionsModal(props: GlobalOptionsProps) {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Vessel 당 Elements">
+              <Field label="Elements per Vessel">
                 <Input
                   disabled={optAuto}
                   className="text-center"
@@ -1144,7 +1690,7 @@ export function GlobalOptionsModal(props: GlobalOptionsProps) {
                 />
               </Field>
               <div className="col-span-1" />
-              <Field label="펌프 효율 (0-1)">
+              <Field label="Pump Efficiency (0-1)">
                 <Input
                   disabled={optAuto}
                   className="text-center"
@@ -1153,7 +1699,7 @@ export function GlobalOptionsModal(props: GlobalOptionsProps) {
                   onChange={(e) => setOptPumpEff(Number(e.target.value))}
                 />
               </Field>
-              <Field label="ERD 효율 (0-1)">
+              <Field label="ERD Efficiency (0-1)">
                 <Input
                   disabled={optAuto}
                   className="text-center"
@@ -1171,7 +1717,7 @@ export function GlobalOptionsModal(props: GlobalOptionsProps) {
             onClick={onClose}
             className="px-5 py-1.5 bg-slate-100 hover:bg-white text-slate-900 rounded-md text-xs font-bold transition-colors shadow-lg"
           >
-            저장 & 닫기
+            Save & Close
           </button>
         </div>
       </div>
