@@ -21,9 +21,29 @@ import { useSaltQuickEntry, type QuickState } from '../hooks/useSaltQuickEntry';
 import { useChargeBalanceActions } from '../hooks/useChargeBalanceActions';
 import type { FeedDerived } from '../hooks/useFeedChargeBalance';
 
+type FeedDraft = {
+  temperature_C: number;
+  ph: number;
+  flow_m3h: number;
+
+  water_type?: string | null;
+  water_subtype?: string | null;
+  feed_note?: string | null;
+
+  temp_min_C?: number | null;
+  temp_max_C?: number | null;
+
+  turbidity_ntu?: number | null;
+  tss_mgL?: number | null;
+  sdi15?: number | null;
+  toc_mgL?: number | null;
+
+  [k: string]: unknown;
+};
+
 interface FeedInspectorBodyProps {
-  localFeed: any;
-  setLocalFeed: React.Dispatch<React.SetStateAction<any>>;
+  localFeed: FeedDraft;
+  setLocalFeed: React.Dispatch<React.SetStateAction<FeedDraft>>;
 
   localChem: any;
   setLocalChem: React.Dispatch<React.SetStateAction<any>>;
@@ -41,6 +61,18 @@ interface FeedInspectorBodyProps {
   compact: boolean;
 
   derived: FeedDerived;
+}
+
+function num0(s: string): number {
+  if (s.trim() === '') return 0;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function numOrNull(s: string): number | null {
+  if (s.trim() === '') return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
 }
 
 export function FeedInspectorBody(props: FeedInspectorBodyProps) {
@@ -148,7 +180,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 className="w-full h-9 bg-slate-950 border border-slate-700 rounded px-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
                 value={String(localFeed.water_type ?? '')}
                 onChange={(e) =>
-                  setLocalFeed({ ...localFeed, water_type: e.target.value })
+                  setLocalFeed((prev) => ({
+                    ...prev,
+                    water_type: e.target.value,
+                  }))
                 }
               >
                 <option value="">(선택)</option>
@@ -171,7 +206,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 value={String(localFeed.water_subtype ?? '')}
                 placeholder="예: 태평양 평균 / 아라비아만 / 냉각탑 블로다운 ..."
                 onChange={(e) =>
-                  setLocalFeed({ ...localFeed, water_subtype: e.target.value })
+                  setLocalFeed((prev) => ({
+                    ...prev,
+                    water_subtype: e.target.value,
+                  }))
                 }
               />
               <datalist id="water-subtype-suggestions">
@@ -188,10 +226,13 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
             </label>
             <textarea
               className="w-full h-16 bg-slate-950 border border-slate-700 rounded px-2 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
-              value={localFeed.feed_note ?? ''}
+              value={String(localFeed.feed_note ?? '')}
               placeholder="(선택) 원수 특이사항/전처리/샘플링 정보 등"
               onChange={(e) =>
-                setLocalFeed({ ...localFeed, feed_note: e.target.value })
+                setLocalFeed((prev) => ({
+                  ...prev,
+                  feed_note: e.target.value,
+                }))
               }
             />
           </div>
@@ -204,10 +245,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 className="h-9 text-center font-mono"
                 value={localFeed.temperature_C}
                 onChange={(e) =>
-                  setLocalFeed({
-                    ...localFeed,
-                    temperature_C: Number(e.target.value),
-                  })
+                  setLocalFeed((prev) => ({
+                    ...prev,
+                    temperature_C: num0(e.target.value),
+                  }))
                 }
               />
             </Field>
@@ -219,10 +260,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 min={0}
                 max={14}
                 onChange={(e) =>
-                  setLocalFeed({
-                    ...localFeed,
-                    ph: clampf(Number(e.target.value), 0, 14),
-                  })
+                  setLocalFeed((prev) => ({
+                    ...prev,
+                    ph: clampf(num0(e.target.value), 0, 14),
+                  }))
                 }
               />
             </Field>
@@ -233,10 +274,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                   className="h-9 font-bold text-emerald-400 text-right font-mono"
                   value={localFeed.flow_m3h}
                   onChange={(e) =>
-                    setLocalFeed({
-                      ...localFeed,
-                      flow_m3h: Number(e.target.value),
-                    })
+                    setLocalFeed((prev) => ({
+                      ...prev,
+                      flow_m3h: num0(e.target.value),
+                    }))
                   }
                 />
               </Field>
@@ -260,7 +301,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                   className="h-9 text-right font-mono"
                   value={quick.nacl_mgL}
                   onChange={(e) =>
-                    setQuick({ ...quick, nacl_mgL: Number(e.target.value) })
+                    setQuick({ ...quick, nacl_mgL: num0(e.target.value) })
                   }
                 />
               </Field>
@@ -270,7 +311,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                   className="h-9 text-right font-mono"
                   value={quick.mgso4_mgL}
                   onChange={(e) =>
-                    setQuick({ ...quick, mgso4_mgL: Number(e.target.value) })
+                    setQuick({ ...quick, mgso4_mgL: num0(e.target.value) })
                   }
                 />
               </Field>
@@ -524,10 +565,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                       className="h-9 text-right font-mono"
                       value={localFeed.temp_min_C ?? ''}
                       onChange={(e) =>
-                        setLocalFeed({
-                          ...localFeed,
-                          temp_min_C: Number(e.target.value),
-                        })
+                        setLocalFeed((prev) => ({
+                          ...prev,
+                          temp_min_C: numOrNull(e.target.value),
+                        }))
                       }
                     />
                   </Field>
@@ -538,10 +579,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                       className="h-9 text-right font-mono"
                       value={localFeed.temperature_C ?? ''}
                       onChange={(e) =>
-                        setLocalFeed({
-                          ...localFeed,
-                          temperature_C: Number(e.target.value),
-                        })
+                        setLocalFeed((prev) => ({
+                          ...prev,
+                          temperature_C: num0(e.target.value),
+                        }))
                       }
                     />
                   </Field>
@@ -552,10 +593,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                       className="h-9 text-right font-mono"
                       value={localFeed.temp_max_C ?? ''}
                       onChange={(e) =>
-                        setLocalFeed({
-                          ...localFeed,
-                          temp_max_C: Number(e.target.value),
-                        })
+                        setLocalFeed((prev) => ({
+                          ...prev,
+                          temp_max_C: numOrNull(e.target.value),
+                        }))
                       }
                     />
                   </Field>
@@ -573,10 +614,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                     className="h-9 text-right font-mono"
                     value={localFeed.turbidity_ntu ?? ''}
                     onChange={(e) =>
-                      setLocalFeed({
-                        ...localFeed,
-                        turbidity_ntu: Number(e.target.value),
-                      })
+                      setLocalFeed((prev) => ({
+                        ...prev,
+                        turbidity_ntu: numOrNull(e.target.value),
+                      }))
                     }
                   />
                 </Field>
@@ -585,10 +626,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                     className="h-9 text-right font-mono"
                     value={localFeed.tss_mgL ?? ''}
                     onChange={(e) =>
-                      setLocalFeed({
-                        ...localFeed,
-                        tss_mgL: Number(e.target.value),
-                      })
+                      setLocalFeed((prev) => ({
+                        ...prev,
+                        tss_mgL: numOrNull(e.target.value),
+                      }))
                     }
                   />
                 </Field>
@@ -597,10 +638,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                     className="h-9 text-right font-mono"
                     value={localFeed.sdi15 ?? ''}
                     onChange={(e) =>
-                      setLocalFeed({
-                        ...localFeed,
-                        sdi15: Number(e.target.value),
-                      })
+                      setLocalFeed((prev) => ({
+                        ...prev,
+                        sdi15: numOrNull(e.target.value),
+                      }))
                     }
                   />
                 </Field>
@@ -609,10 +650,10 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                     className="h-9 text-right font-mono"
                     value={localFeed.toc_mgL ?? ''}
                     onChange={(e) =>
-                      setLocalFeed({
-                        ...localFeed,
-                        toc_mgL: Number(e.target.value),
-                      })
+                      setLocalFeed((prev) => ({
+                        ...prev,
+                        toc_mgL: numOrNull(e.target.value),
+                      }))
                     }
                   />
                 </Field>

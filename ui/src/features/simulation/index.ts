@@ -1,4 +1,4 @@
-// ui/src/features/flow-builder/ui/index.ts
+// ui/src/features/flow-builder/index.ts
 
 // Components
 export * from './components/Common';

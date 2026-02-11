@@ -1,10 +1,10 @@
-// ui\src\features\simulation\model\types.ts
 // ui/src/features/simulation/model/types.ts
 // AquaNova FlowBuilder — Types & Utilities
 
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import type { Node, Edge } from 'reactflow';
 import type { TimeSeriesPoint } from '@/api/types';
+import type { ChargeBalanceMode } from '../chemistry';
 
 // ==========================================================
 // 1) Core Unit Types
@@ -170,7 +170,7 @@ export type SetEdgesFn = Dispatch<SetStateAction<Edge[]>>;
 // ==========================================================
 
 export type ChemistryInput = {
-  // scaling inputs
+  // scaling inputs (required)
   alkalinity_mgL_as_CaCO3: number | null;
   calcium_hardness_mgL_as_CaCO3: number | null;
 
@@ -183,8 +183,12 @@ export type ChemistryInput = {
   sr_mgL?: number | null;
   ba_mgL?: number | null;
 
+  // ✅ WAVE/프리셋/백엔드 계약에 있는 금속 이온(현재 useFlowLogic에서 쓰고 있음)
+  fe_mgL?: number | null;
+  mn_mgL?: number | null;
+
   hco3_mgL?: number | null;
-  no3_mgL?: number | null; // backend is NO2; keep UI NO3 as-is
+  no3_mgL?: number | null; // backend may have NO2; keep UI NO3 as-is
   cl_mgL?: number | null;
   f_mgL?: number | null;
   so4_mgL?: number | null;
@@ -197,13 +201,14 @@ export type ChemistryInput = {
   sio2_mgL?: number | null;
   b_mgL?: number | null;
 
-  // legacy support / convenience
+  // legacy support / convenience (scaling pack)
   sulfate_mgL?: number | null;
   barium_mgL?: number | null;
   strontium_mgL?: number | null;
   silica_mgL_SiO2?: number | null;
 
-  [k: string]: any;
+  // ✅ any 대신 unknown (정석)
+  [k: string]: unknown;
 };
 
 export type ChemistrySI = {
@@ -227,16 +232,42 @@ export type ChemistrySummary = {
 // 4) Persistence Model
 // ==========================================================
 
+/**
+ * ✅ UI Feed State
+ * - useFlowLogic / sessionStorage / localStorage 모두 이 타입을 사용
+ * - backend FeedInput과 1:1일 필요는 없고(UI 전용 필드 포함), 최소한 "UI가 들고 있는 것"과는 일치해야 한다.
+ */
+export type FeedState = {
+  flow_m3h: number;
+  tds_mgL: number;
+  temperature_C: number;
+  ph: number;
+
+  pressure_bar?: number;
+
+  // WAVE meta
+  water_type?: string | null;
+  water_subtype?: string | null;
+  turbidity_ntu?: number | null;
+  tss_mgL?: number | null;
+  sdi15?: number | null;
+  toc_mgL?: number | null;
+
+  // UI-only (optional)
+  temp_min_C?: number | null;
+  temp_max_C?: number | null;
+  feed_note?: string | null;
+
+  // UI preference
+  charge_balance_mode?: ChargeBalanceMode | null;
+
+  [k: string]: unknown;
+};
+
 export type PersistModel = {
   nodes: Node<FlowData>[];
   edges: Edge[];
-  feed: {
-    flow_m3h: number;
-    tds_mgL: number;
-    temperature_C: number;
-    ph: number;
-    water_type?: string;
-  };
+  feed: FeedState;
   opt: {
     auto: boolean;
     membrane: string;

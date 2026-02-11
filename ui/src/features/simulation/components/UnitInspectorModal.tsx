@@ -1,6 +1,6 @@
 // ui/src/features/simulation/components/UnitInspectorModal.tsx
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Node } from 'reactflow';
+import type { Node } from 'reactflow';
 
 import {
   HRROEditor,
@@ -12,14 +12,21 @@ import {
 } from '..';
 
 import {
-  UnitData,
-  FlowData,
-  EndpointData,
-  UnitKind,
-  ChemistryInput,
-  UnitMode,
-  SetNodesFn,
-  SetEdgesFn,
+  DEFAULT_CHEMISTRY,
+  type UnitData,
+  type FlowData,
+  type EndpointData,
+  type UnitKind,
+  type ChemistryInput,
+  type UnitMode,
+  type SetNodesFn,
+  type SetEdgesFn,
+  type ROConfig,
+  type NFConfig,
+  type UFConfig,
+  type MFConfig,
+  type HRROConfig,
+  type PumpConfig,
 } from '../model/types';
 
 import { updateUnitCfg } from '../model/logic';
@@ -29,42 +36,50 @@ import { FeedInspectorBody } from './FeedInspectorBody';
 import { useFeedChargeBalance } from '../hooks/useFeedChargeBalance';
 import { roundTo, type ChargeBalanceMode } from '../chemistry';
 
+// ✅ water_type 정석화(백엔드 enum) 유틸
+import { normalizeWaterType, type FeedWaterType } from '../model/feedWater';
+
 // ------------------------------------------------------------------
 // Unit / Feed Settings Modal
 // ------------------------------------------------------------------
+type FeedDraft = {
+  flow_m3h: number;
+  tds_mgL: number;
+  temperature_C: number;
+  ph: number;
+  pressure_bar?: number;
+
+  // ✅ 백엔드 enum과 일치(과거 데이터/하위호환 string도 허용)
+  water_type?: FeedWaterType | string | null;
+  water_subtype?: string | null;
+
+  turbidity_ntu?: number | null;
+  tss_mgL?: number | null;
+  sdi15?: number | null;
+  toc_mgL?: number | null;
+
+  temp_min_C?: number | null;
+  temp_max_C?: number | null;
+  feed_note?: string | null;
+
+  // UI 설정 저장용
+  charge_balance_mode?: ChargeBalanceMode | null;
+
+  [k: string]: unknown;
+};
+
 interface InspectorProps {
   isOpen: boolean;
   onClose: () => void;
   selEndpoint: (Node<FlowData> & { data: EndpointData }) | null;
   selUnit: Node<FlowData> | null;
 
-  feed: {
-    flow_m3h: number;
-    tds_mgL: number;
-    temperature_C: number;
-    ph: number;
-    pressure_bar?: number;
+  feed: FeedDraft;
+  setFeed: React.Dispatch<React.SetStateAction<FeedDraft>>;
 
-    water_type?: string | null;
-    water_subtype?: string | null;
-    turbidity_ntu?: number | null;
-    tss_mgL?: number | null;
-    sdi15?: number | null;
-    toc_mgL?: number | null;
-
-    temp_min_C?: number | null;
-    temp_max_C?: number | null;
-    feed_note?: string | null;
-
-    // (옵션) UI 설정 저장용
-    charge_balance_mode?: ChargeBalanceMode | null;
-
-    [k: string]: any;
-  };
-
-  setFeed: (v: any) => void;
   feedChemistry: ChemistryInput;
   setFeedChemistry: React.Dispatch<React.SetStateAction<ChemistryInput>>;
+
   unitMode: UnitMode;
   setNodes: SetNodesFn;
   setEdges: SetEdgesFn;
@@ -83,15 +98,15 @@ export function UnitInspectorModal(props: InspectorProps) {
     setFeedChemistry,
     unitMode,
     setNodes,
-    // setEdges,
-    // setSelectedNodeId,
   } = props;
 
   useBlockDeleteKeysWhenOpen(isOpen);
 
-  const [localFeed, setLocalFeed] = useState<any>(feed);
-  const [localChem, setLocalChem] = useState<any>(feedChemistry);
-  const [localCfg, setLocalCfg] = useState<any>(null);
+  const [localFeed, setLocalFeed] = useState<FeedDraft>(feed);
+  const [localChem, setLocalChem] = useState<ChemistryInput>(
+    feedChemistry ?? DEFAULT_CHEMISTRY,
+  );
+  const [localCfg, setLocalCfg] = useState<UnitData['cfg'] | null>(null);
 
   const [quick, setQuick] = useState({ nacl_mgL: 0, mgso4_mgL: 0 });
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -110,30 +125,32 @@ export function UnitInspectorModal(props: InspectorProps) {
   useEffect(() => {
     if (!isOpen) return;
 
-    const minT = (feed as any)?.temp_min_C ?? feed.temperature_C;
-    const maxT = (feed as any)?.temp_max_C ?? feed.temperature_C;
+    const minT = feed?.temp_min_C ?? feed.temperature_C;
+    const maxT = feed?.temp_max_C ?? feed.temperature_C;
+
+    // ✅ 과거 데이터에 "해수" 같은 값이 있어도 enum으로 정규화해서 UI 상태를 만든다
+    const wt = normalizeWaterType(feed?.water_type);
 
     setLocalFeed({
       ...feed,
-      water_type: feed?.water_type == null ? '' : String(feed.water_type),
+      water_type: wt ?? '',
       water_subtype:
         feed?.water_subtype == null ? '' : String(feed.water_subtype),
       temp_min_C: minT,
       temp_max_C: maxT,
-      feed_note: (feed as any)?.feed_note ?? '',
+      feed_note: feed?.feed_note ?? '',
     });
 
-    setLocalChem(feedChemistry || {});
+    setLocalChem(feedChemistry ?? DEFAULT_CHEMISTRY);
     setQuick({ nacl_mgL: 0, mgso4_mgL: 0 });
     setDetailsOpen(false);
 
-    const saved = (feed as any)?.charge_balance_mode as
-      | ChargeBalanceMode
-      | undefined;
+    const saved = feed?.charge_balance_mode ?? null;
     setCbMode(saved ?? 'anions');
 
     if (selUnit && (selUnit.data as any).type === 'unit') {
-      setLocalCfg(JSON.parse(JSON.stringify((selUnit.data as any).cfg)));
+      const u = selUnit.data as UnitData;
+      setLocalCfg(JSON.parse(JSON.stringify(u.cfg)) as UnitData['cfg']);
     } else {
       setLocalCfg(null);
     }
@@ -223,19 +240,28 @@ export function UnitInspectorModal(props: InspectorProps) {
 
   const handleApply = () => {
     if (isFeedNode) {
-      const chemOut = {
+      const subtype = String(localFeed.water_subtype ?? '').trim();
+      const note = String(localFeed.feed_note ?? '').trim();
+
+      // ✅ derived.chemUsed는 "이온표(보정 적용)" 값,
+      // ✅ scaling fields(알칼리/경도) 포함을 위해 localChem과 merge
+      const chemOut: ChemistryInput = {
+        ...localChem,
         ...(derived.chemUsed ?? localChem),
         alkalinity_mgL_as_CaCO3: derived.calcAlkalinity,
         calcium_hardness_mgL_as_CaCO3: derived.calcHardness,
       };
 
-      setFeed({
+      // ✅ API/저장에 들어가는 값은 반드시 enum으로 정규화
+      setFeed((prev) => ({
+        ...prev,
         ...localFeed,
         tds_mgL: roundTo(derived.totalTDS, 2),
-        water_type: (localFeed.water_type ?? '') || null,
-        water_subtype: (localFeed.water_subtype ?? '') || null,
+        water_type: normalizeWaterType(localFeed.water_type),
+        water_subtype: subtype.length > 0 ? subtype : null,
+        feed_note: note.length > 0 ? note : null,
         charge_balance_mode: cbMode,
-      });
+      }));
 
       setFeedChemistry(chemOut);
     } else if (selUnit && localCfg) {
@@ -257,7 +283,9 @@ export function UnitInspectorModal(props: InspectorProps) {
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/50 shrink-0">
           <div className="flex items-center gap-2">
             <div
-              className={`w-2 h-2 rounded-full ${selEndpoint ? 'bg-blue-500' : 'bg-emerald-500'}`}
+              className={`w-2 h-2 rounded-full ${
+                selEndpoint ? 'bg-blue-500' : 'bg-emerald-500'
+              }`}
             />
             <h2 className="text-sm font-bold text-slate-100 tracking-wide">
               {isFeedNode
@@ -359,30 +387,56 @@ export function UnitInspectorModal(props: InspectorProps) {
               (() => {
                 const u = selUnit.data as UnitData;
                 const kind = u.kind as UnitKind;
-                const proxyUnit = { ...u, cfg: localCfg };
-                const updateCfg = (newCfg: any) => setLocalCfg(newCfg);
+
+                const updateCfg = (newCfg: UnitData['cfg']) =>
+                  setLocalCfg(newCfg);
 
                 if (kind === 'HRRO')
-                  return <HRROEditor node={proxyUnit} onChange={updateCfg} />;
+                  return (
+                    <HRROEditor
+                      node={{ ...u, cfg: localCfg as HRROConfig } as any}
+                      onChange={updateCfg as unknown as (c: HRROConfig) => void}
+                    />
+                  );
+
                 if (kind === 'RO')
                   return (
-                    <ROEditor node={proxyUnit} onChange={updateCfg as any} />
+                    <ROEditor
+                      node={{ ...u, cfg: localCfg as ROConfig } as any}
+                      onChange={updateCfg as unknown as (c: ROConfig) => void}
+                    />
                   );
+
                 if (kind === 'UF')
                   return (
-                    <UFEditor node={proxyUnit} onChange={updateCfg as any} />
+                    <UFEditor
+                      node={{ ...u, cfg: localCfg as UFConfig } as any}
+                      onChange={updateCfg as unknown as (c: UFConfig) => void}
+                    />
                   );
+
                 if (kind === 'NF')
                   return (
-                    <NFEditor node={proxyUnit} onChange={updateCfg as any} />
+                    <NFEditor
+                      node={{ ...u, cfg: localCfg as NFConfig } as any}
+                      onChange={updateCfg as unknown as (c: NFConfig) => void}
+                    />
                   );
+
                 if (kind === 'MF')
                   return (
-                    <MFEditor node={proxyUnit} onChange={updateCfg as any} />
+                    <MFEditor
+                      node={{ ...u, cfg: localCfg as MFConfig } as any}
+                      onChange={updateCfg as unknown as (c: MFConfig) => void}
+                    />
                   );
+
                 if (kind === 'PUMP')
                   return (
-                    <PumpEditor node={proxyUnit as any} onChange={updateCfg} />
+                    <PumpEditor
+                      node={{ ...u, cfg: localCfg as PumpConfig } as any}
+                      onChange={updateCfg as unknown as (c: PumpConfig) => void}
+                    />
                   );
 
                 return (

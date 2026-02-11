@@ -1,11 +1,11 @@
-# app\data\membranes.py
+# app/data/membranes.py
 # --------------------------------------------------------------------------
 # Membrane Specifications Database
 # --------------------------------------------------------------------------
 # [Key Mapping Guide]
 # - vendor              : 제조사 (Brand)
 # - A_lmh_bar           : 수투과계수 (Permeability)
-# - B_mps               : 염투과계수 (Salt Passage) - UI에서는 LMH 단위로 표시되므로 값은 LMH 기준 유지
+# - B_mps               : 염투과계수 (Salt Passage) - *주의: 이 파일에서는 편의상 LMH 단위 값을 저장함*
 # - salt_rejection_pct  : 염제거율 (Salt Rejection %)
 # --------------------------------------------------------------------------
 
@@ -22,7 +22,7 @@ MEMBRANES = [
         "size": "8040",
         "area_m2": 37.0,
         "A_lmh_bar": 2.00,
-        "B_mps": 0.40,  # Note: Value is in LMH for UI consistency
+        "B_mps": 0.40,
         "salt_rejection_pct": 99.5,
         "max_flux_lmh": 40.0,
     },
@@ -78,6 +78,38 @@ MEMBRANES = [
     # ==========================================================================
     # 2. Real Models (DuPont, LG, Toray, etc.)
     # ==========================================================================
+    # --- FilmTec SOAR (CCRO/HRRO Optimized) [TUNED FOR WAVE MATCHING] ---
+    {
+        "id": "filmtec-soar-7000i",
+        "name": "FilmTec™ SOAR 7000i",
+        "vendor": "DuPont",
+        "family": "RO",
+        "type": "HRRO",
+        "size": "8040",
+        # [수정 1] 리포트 역산 결과 반영 (2044/50 = 40.88)
+        "area_m2": 40.9,
+        # [수정 2] 압력 보정을 위해 A값 조절 (WAVE의 초고압 모사를 위한 튜닝)
+        # 물리 엔진 차이를 극복하기 위해 약간 낮게 설정하여 압력 상승 유도
+        "A_lmh_bar": 1.20,
+        # [수정 3] 수질 보정 (WAVE TDS 204mg/L를 맞추기 위해 B값 대폭 감소)
+        # 기존 1.4e-8 -> 1.0e-9 (약 1/14로 감소)
+        "B_mps": 1.0e-9,
+        "salt_rejection_pct": 99.85,
+        "notes": "Optimized for CCRO/HRRO (WAVE Tuned)",
+    },
+    {
+        "id": "filmtec-soar-6000i",
+        "name": "FilmTec™ SOAR 6000i",
+        "vendor": "DuPont",
+        "family": "RO",
+        "type": "HRRO",
+        "size": "8040",
+        "area_m2": 40.9,  # 6000i도 동일 플랫폼
+        "A_lmh_bar": 1.10,  # 7000i보다 약간 낮은 효율 가정
+        "B_mps": 1.5e-9,
+        "salt_rejection_pct": 99.8,
+        "notes": "Standard CCRO Element",
+    },
     # --- DuPont ---
     {
         "id": "dupont-bw30-pro-400",

@@ -1,108 +1,166 @@
 // ui/src/features/simulation/hooks/useFeedPreset.ts
-import { useCallback, useMemo } from 'react';
+import {
+  useCallback,
+  useMemo,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
+
 import { WATER_CATALOG } from '../data/water_catalog';
 import { n0, roundTo } from '../chemistry';
+import type { ChemistryInput } from '../model/types';
 
-export const WATER_TYPE_OPTIONS = [
-  { value: '해수', label: '해수' },
-  { value: '기수', label: '기수/지하수' },
-  { value: '지표수', label: '지표수(강/호수)' },
-  { value: '폐수', label: '폐수(산업/공정)' },
-  { value: '재이용수', label: '재이용수(하수처리수)' },
-];
+import {
+  WATER_TYPE_OPTIONS,
+  buildSubtypeSuggestions,
+  computeTdsMgL,
+  resolveWaterSubtype,
+  resolveWaterType,
+  type IonMap,
+  type WaterCatalogPreset,
+} from '../model/feedWater';
 
-function categoryToWaterType(category: string | undefined | null): string {
-  if (category === 'Seawater') return '해수';
-  if (category === 'Brackish') return '기수';
-  if (category === 'Surface') return '지표수';
-  if (category === 'Waste') return '폐수';
-  if (category === 'Reuse') return '재이용수';
-  return '기수';
+export { WATER_TYPE_OPTIONS }; // 기존 import 호환용
+
+export type FeedState = {
+  temperature_C?: number;
+  ph?: number;
+
+  water_type?: string;
+  water_subtype?: string;
+
+  tds_mgL?: number;
+
+  temp_min_C?: number | null;
+  temp_max_C?: number | null;
+
+  feed_note?: string | null;
+
+  [key: string]: unknown;
+};
+
+function asText(v: unknown, fallback = ''): string {
+  const s = String(v ?? '').trim();
+  return s.length ? s : fallback;
+}
+
+function asNumberOr(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function r3num(x: unknown): number {
+  return roundTo(n0(x), 3);
+}
+
+function chemPatchFromIons(ions: IonMap): Partial<ChemistryInput> {
+  // dataset key sometimes "SiO2"
+  const si = (ions as any).SiO2;
+
+  // NOTE: ChemistryInput의 ion 키는 optional이므로,
+  // 프리셋에서 숫자가 아니면 0으로 넣어도 되고, null로 넣어도 됨.
+  // 여기서는 "프리셋은 값이 존재한다"는 가정으로 0 fallback을 씀.
+  return {
+    // cations
+    nh4_mgL: r3num(ions.NH4),
+    k_mgL: r3num(ions.K),
+    na_mgL: r3num(ions.Na),
+    mg_mgL: r3num(ions.Mg),
+    ca_mgL: r3num(ions.Ca),
+    sr_mgL: r3num(ions.Sr),
+    ba_mgL: r3num(ions.Ba),
+
+    // anions
+    hco3_mgL: r3num(ions.HCO3),
+    co3_mgL: r3num(ions.CO3),
+    no3_mgL: r3num(ions.NO3),
+    cl_mgL: r3num(ions.Cl),
+    f_mgL: r3num(ions.F),
+    so4_mgL: r3num(ions.SO4),
+    br_mgL: r3num(ions.Br),
+    po4_mgL: r3num(ions.PO4),
+
+    // neutrals
+    co2_mgL: r3num((ions as any).CO2),
+    sio2_mgL: r3num(si),
+    silica_mgL_SiO2: r3num(si),
+    b_mgL: r3num((ions as any).B),
+
+    // optional metals (프리셋에 있으면 반영)
+    fe_mgL: r3num((ions as any).Fe),
+    mn_mgL: r3num((ions as any).Mn),
+  };
 }
 
 export function useFeedPreset(
-  localFeed: any,
-  setLocalFeed: React.Dispatch<React.SetStateAction<any>>,
-  setLocalChem: React.Dispatch<React.SetStateAction<any>>,
+  localFeed: FeedState,
+  setLocalFeed: Dispatch<SetStateAction<FeedState>>,
+  setLocalChem: Dispatch<SetStateAction<ChemistryInput>>,
 ) {
+  const waterType = String(localFeed?.water_type ?? '');
+
+  // ✅ FeedInspectorBody가 기대하는 {value,label} 형태 그대로 제공
+  const waterTypeOptions = useMemo(() => WATER_TYPE_OPTIONS, []);
+
   const subtypeSuggestions = useMemo(() => {
-    const wt = String(localFeed?.water_type ?? '');
-    if (!wt) return [];
-    const cats: Record<string, string> = {
-      해수: 'Seawater',
-      기수: 'Brackish',
-      지표수: 'Surface',
-      폐수: 'Waste',
-      재이용수: 'Reuse',
-    };
-    const cat = cats[wt];
-    if (!cat) return [];
-    return WATER_CATALOG.filter((p) => p.category === (cat as any)).map(
-      (p) => p.name,
+    return buildSubtypeSuggestions(
+      WATER_CATALOG as unknown as WaterCatalogPreset[],
+      waterType,
     );
-  }, [localFeed?.water_type]);
+  }, [waterType]);
 
   const applyPreset = useCallback(
     (presetId: string) => {
-      const preset = WATER_CATALOG.find((p) => p.id === presetId);
+      const preset = (WATER_CATALOG as unknown as WaterCatalogPreset[]).find(
+        (p) => p.id === presetId,
+      );
       if (!preset) return;
 
-      const ions = preset.ions;
-      const calcTDS = Object.values(ions).reduce((sum, v) => sum + (v || 0), 0);
+      const ions = (preset.ions ?? {}) as IonMap;
+      const tds = computeTdsMgL(ions);
 
-      const wt =
-        (preset as any).water_type ?? categoryToWaterType(preset.category);
-      const ws = (preset as any).water_subtype ?? preset.name;
+      const wt = resolveWaterType(preset); // FeedWaterType
+      const ws = resolveWaterSubtype(preset); // string
 
-      setLocalFeed((prev: any) => ({
-        ...prev,
-        temperature_C: preset.temp_C,
-        ph: preset.ph,
-        water_type: wt,
-        water_subtype: ws,
-        tds_mgL: calcTDS,
-        temp_min_C: prev?.temp_min_C ?? preset.temp_C,
-        temp_max_C: prev?.temp_max_C ?? preset.temp_C,
-        feed_note: (prev?.feed_note ?? '').trim()
-          ? prev.feed_note
-          : `${preset.desc}`,
-      }));
+      setLocalFeed((prev) => {
+        const prevTemp = asNumberOr(prev.temperature_C, 25);
+        const nextTemp = asNumberOr(preset.temp_C, prevTemp);
 
-      const r3 = (x: any) => roundTo(n0(x), 3);
+        // controlled-safe: 문자열은 ''로
+        const nextSubtype = asText(ws, asText(prev.water_subtype, ''));
+        const nextNote =
+          asText(prev.feed_note, '').length > 0
+            ? asText(prev.feed_note, '')
+            : asText((preset as any).desc, '');
 
-      setLocalChem({
-        nh4_mgL: r3(ions.NH4),
-        k_mgL: r3(ions.K),
-        na_mgL: r3(ions.Na),
-        mg_mgL: r3(ions.Mg),
-        ca_mgL: r3(ions.Ca),
-        sr_mgL: r3(ions.Sr),
-        ba_mgL: r3(ions.Ba),
-        fe_mgL: r3(ions.Fe),
-        mn_mgL: r3(ions.Mn),
+        return {
+          ...prev,
+          temperature_C: preset.temp_C ?? prev.temperature_C,
+          ph: preset.ph ?? prev.ph,
 
-        hco3_mgL: r3(ions.HCO3),
-        no3_mgL: r3(ions.NO3),
-        cl_mgL: r3(ions.Cl),
-        f_mgL: r3(ions.F),
-        so4_mgL: r3(ions.SO4),
-        br_mgL: r3(ions.Br),
-        po4_mgL: r3(ions.PO4),
-        co3_mgL: r3(ions.CO3),
+          water_type: wt, // enum string
+          water_subtype: nextSubtype,
 
-        sio2_mgL: r3(ions.SiO2),
-        b_mgL: r3(ions.B),
-        co2_mgL: r3(ions.CO2),
+          tds_mgL: tds,
 
-        alkalinity_mgL_as_CaCO3: null,
-        calcium_hardness_mgL_as_CaCO3: null,
+          // 기존 값이 있으면 유지, 없으면 preset 온도로 채움
+          temp_min_C: prev.temp_min_C ?? nextTemp,
+          temp_max_C: prev.temp_max_C ?? nextTemp,
+
+          feed_note: nextNote,
+        };
       });
+
+      setLocalChem((prev) => ({
+        ...prev,
+        ...chemPatchFromIons(ions),
+      }));
     },
     [setLocalFeed, setLocalChem],
   );
 
   return {
-    waterTypeOptions: WATER_TYPE_OPTIONS,
+    waterTypeOptions,
     subtypeSuggestions,
     applyPreset,
   };

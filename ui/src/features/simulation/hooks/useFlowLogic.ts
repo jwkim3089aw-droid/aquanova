@@ -34,6 +34,7 @@ import {
   ChainOk,
   ChainErr,
   UnitNodeRF,
+  FeedState,
   convFlow,
   convTemp,
   HRROConfig,
@@ -65,6 +66,27 @@ import {
 import { defaultConfig, ensureUnitCfg } from '../FlowBuilder.utils';
 
 const SESSION_KEY = 'AQUANOVA_SESSION_V1';
+
+const DEFAULT_FEED: FeedState = {
+  flow_m3h: 20,
+  tds_mgL: 2000,
+  temperature_C: 25,
+  ph: 7.0,
+  pressure_bar: 0.0,
+
+  water_type: null,
+  water_subtype: null,
+  turbidity_ntu: null,
+  tss_mgL: null,
+  sdi15: null,
+  toc_mgL: null,
+
+  temp_min_C: null,
+  temp_max_C: null,
+  feed_note: null,
+
+  charge_balance_mode: null,
+};
 
 function hasAnyNumber(obj: Record<string, any> | null | undefined): boolean {
   if (!obj) return false;
@@ -117,9 +139,9 @@ function mapChemistryToBackend(ui: ChemistryInput | null | undefined): {
     SiO2: ui.sio2_mgL ?? ui.silica_mgL_SiO2 ?? null,
     B: ui.b_mgL ?? null,
 
-    // (선택) UI에 있다면
-    Fe: (ui as any).fe_mgL ?? null,
-    Mn: (ui as any).mn_mgL ?? null,
+    // metals
+    Fe: ui.fe_mgL ?? null,
+    Mn: ui.mn_mgL ?? null,
   };
 
   const chemistryOut = hasAnyNumber(chemistry as any) ? chemistry : null;
@@ -183,14 +205,8 @@ export function useFlowLogic() {
     loadLibrary(),
   );
 
-  const [feed, setFeed] = useState(
-    sessionData?.feed || {
-      flow_m3h: 20,
-      tds_mgL: 2000,
-      temperature_C: 25,
-      ph: 7.0,
-      pressure_bar: 0.0,
-    },
+  const [feed, setFeed] = useState<FeedState>(
+    (sessionData?.feed as FeedState) || DEFAULT_FEED,
   );
 
   const [feedChemistry, setFeedChemistry] = useState<ChemistryInput>(
@@ -444,22 +460,12 @@ export function useFlowLogic() {
       if (next === unitMode) return;
 
       // Feed conversion
-      const feed2 = { ...feed };
-      feed2.flow_m3h =
-        unitMode === 'SI'
-          ? convFlow(feed2.flow_m3h, 'SI', next)
-          : convFlow(feed2.flow_m3h, 'US', next);
-
-      feed2.temperature_C =
-        unitMode === 'SI'
-          ? convTemp(feed2.temperature_C, 'SI', next)
-          : convTemp(feed2.temperature_C, 'US', next);
+      const feed2: FeedState = { ...feed };
+      feed2.flow_m3h = convFlow(feed2.flow_m3h, unitMode, next);
+      feed2.temperature_C = convTemp(feed2.temperature_C, unitMode, next);
 
       if (typeof feed2.pressure_bar === 'number') {
-        feed2.pressure_bar =
-          unitMode === 'SI'
-            ? convPress(feed2.pressure_bar, 'SI', next)
-            : convPress(feed2.pressure_bar, 'US', next);
+        feed2.pressure_bar = convPress(feed2.pressure_bar, unitMode, next);
       }
       setFeed(feed2);
 
@@ -588,30 +594,22 @@ export function useFlowLogic() {
 
       // Feed -> SI
       const feedSI: ApiFeedInput = {
-        flow_m3h:
-          unitMode === 'SI'
-            ? feed.flow_m3h
-            : convFlow(feed.flow_m3h, 'US', 'SI'),
+        flow_m3h: convFlow(feed.flow_m3h, unitMode, 'SI'),
         tds_mgL: feed.tds_mgL,
-        temperature_C:
-          unitMode === 'SI'
-            ? feed.temperature_C
-            : convTemp(feed.temperature_C, 'US', 'SI'),
+        temperature_C: convTemp(feed.temperature_C, unitMode, 'SI'),
         ph: feed.ph,
         pressure_bar:
           typeof feed.pressure_bar === 'number'
-            ? unitMode === 'SI'
-              ? feed.pressure_bar
-              : convPress(feed.pressure_bar, 'US', 'SI')
+            ? convPress(feed.pressure_bar, unitMode, 'SI')
             : 0.0,
 
-        // WAVE 메타
-        water_type: (feed as any).water_type ?? null,
-        water_subtype: (feed as any).water_subtype ?? null,
-        turbidity_ntu: (feed as any).turbidity_ntu ?? null,
-        tss_mgL: (feed as any).tss_mgL ?? null,
-        sdi15: (feed as any).sdi15 ?? null,
-        toc_mgL: (feed as any).toc_mgL ?? null,
+        // WAVE meta
+        water_type: feed.water_type ?? null,
+        water_subtype: feed.water_subtype ?? null,
+        turbidity_ntu: feed.turbidity_ntu ?? null,
+        tss_mgL: feed.tss_mgL ?? null,
+        sdi15: feed.sdi15 ?? null,
+        toc_mgL: feed.toc_mgL ?? null,
       };
 
       const globals = {
@@ -704,7 +702,6 @@ export function useFlowLogic() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // 모달/인풋에서 이미 prevent 되었거나 입력 중이면 최대한 건드리지 않음
       if (e.defaultPrevented) return;
       if (isEditableTarget(e.target)) return;
 
@@ -734,10 +731,11 @@ export function useFlowLogic() {
         u.id !== 'product'
       ) {
         e.preventDefault();
+        // ✅ 정석: 히스토리는 "변경 전" 스냅샷을 넣는다
+        pushHistory();
         removeNode(u.id, setNodes as SetNodesFn, setEdges as SetEdgesFn);
         setSelectedNodeId(null);
         setEditorOpen(false);
-        pushHistory();
         return;
       }
 
@@ -911,6 +909,7 @@ export function useFlowLogic() {
       setData(null);
       setErr(null);
       setHistory({ past: [], future: [] });
+      setFeed(DEFAULT_FEED);
       setFeedChemistry(DEFAULT_CHEMISTRY);
       setChemSummary(null);
       setEditorOpen(false);

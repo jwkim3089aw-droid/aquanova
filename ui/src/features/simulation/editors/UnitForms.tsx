@@ -402,8 +402,9 @@ export function UFEditor({
 }
 
 // ==============================
-// 3. HRRO Editor
-// ==============================
+// 3. HRRO Editor (Updated for WAVE Parity)
+// ==============================================
+
 export function HRROEditor({
   node,
   onChange,
@@ -416,6 +417,8 @@ export function HRROEditor({
     return <div className="text-red-400 text-xs">Invalid Data</div>;
 
   const raw = (data.cfg as HRROConfig | undefined) ?? {};
+
+  // [보완] WAVE 기본값에 맞춰 초기값 설정
   const cfg: HRROConfig = {
     elements: 6,
     p_set_bar: 28,
@@ -426,11 +429,17 @@ export function HRROEditor({
     timestep_s: 5,
     max_minutes: 30,
     stop_permeate_tds_mgL: null,
-    stop_recovery_pct: 60,
-    hrro_flow_factor: 0.85,
-    hrro_stage_pre_delta_p_bar: 0.31,
+    stop_recovery_pct: 90, // WAVE 목표 회수율 반영
+
+    // [신규 추가 필드 기본값]
+    pf_feed_ratio_pct: 120, // WAVE Default
+    pf_recovery_pct: 20, // WAVE Default
+    hrro_flow_factor: 0.85, // 오염 계수
+    hrro_stage_pre_delta_p_bar: 0.31, // 배관 손실
+
     ...raw,
   };
+
   const patch = (p: Partial<HRROConfig>) => onChange({ ...cfg, ...p });
 
   return (
@@ -444,14 +453,44 @@ export function HRROEditor({
       <div className="mb-2">
         <MembraneSelect
           unitType="HRRO"
-          mode={cfg.membrane_mode}
-          model={cfg.membrane_model}
-          area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
-          A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
-          B={cfg.custom_B_lmh ?? cfg.membrane_B_lmh}
-          rej={cfg.custom_salt_rejection_pct ?? cfg.membrane_salt_rejection_pct}
+          model={cfg.membrane_model ?? 'filmtec-soar-7000i'}
+          area={cfg.membrane_area_m2}
+          A={cfg.membrane_A_lmh_bar}
+          B={cfg.membrane_B_lmh}
+          rej={cfg.membrane_salt_rejection_pct}
           onChange={patch}
         />
+      </div>
+
+      {/* [신규] Plug Flow (PF) 설정 - WAVE 하이브리드 모드 지원 */}
+      <div className={`${GROUP_CLS} border-blue-900/30 bg-blue-950/10`}>
+        <h4 className={`${HEADER_CLS} text-blue-400`}>
+          Plug Flow (PF) Settings
+        </h4>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="PF Feed Ratio (%)">
+            <Input
+              className={INPUT_CLS}
+              value={cfg.pf_feed_ratio_pct ?? 120}
+              onChange={(e) =>
+                patch({ pf_feed_ratio_pct: Number(e.target.value) })
+              }
+            />
+          </Field>
+          <Field label="PF Recovery (%)">
+            <Input
+              className={INPUT_CLS}
+              value={cfg.pf_recovery_pct ?? 20}
+              onChange={(e) =>
+                patch({ pf_recovery_pct: Number(e.target.value) })
+              }
+            />
+          </Field>
+        </div>
+        <div className="mt-2 text-[9px] text-slate-500 leading-tight">
+          * Configure the initial single-pass stage before the closed loop
+          (Hybrid CCRO).
+        </div>
       </div>
 
       <div className={GROUP_CLS}>
@@ -550,6 +589,27 @@ export function HRROEditor({
               readOnly
             />
           </Field>
+
+          {/* [신규] Flow Factor & Delta P 추가 */}
+          <Field label="Flow Factor">
+            <Input
+              className={INPUT_CLS}
+              value={cfg.hrro_flow_factor ?? 0.85}
+              onChange={(e) =>
+                patch({ hrro_flow_factor: Number(e.target.value) })
+              }
+            />
+          </Field>
+          <Field label="Pre-stage ΔP">
+            <Input
+              className={INPUT_CLS}
+              value={cfg.hrro_stage_pre_delta_p_bar ?? 0.31}
+              onChange={(e) =>
+                patch({ hrro_stage_pre_delta_p_bar: Number(e.target.value) })
+              }
+            />
+          </Field>
+
           <Field label="Boost Press">
             <Input
               className={INPUT_CLS}

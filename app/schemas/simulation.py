@@ -536,6 +536,7 @@ class TimeSeriesPoint(AppBaseModel):
     ndp_bar: Optional[float] = None
     permeate_flow_m3h: Optional[float] = None
     permeate_tds_mgL: Optional[float] = None
+    specific_energy_kwh_m3: Optional[float] = None
 
 
 class ScalingIndexOut(AppBaseModel):

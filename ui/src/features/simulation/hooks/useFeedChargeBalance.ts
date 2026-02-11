@@ -1,6 +1,7 @@
 // ui/src/features/simulation/hooks/useFeedChargeBalance.ts
 import { useMemo } from 'react';
 
+import type { ChemistryInput } from '../model/types';
 import {
   CATIONS,
   ANIONS,
@@ -15,9 +16,14 @@ import {
   mgL_to_meqL,
 } from '../chemistry';
 
+type ChargeBalanceMeta = {
+  adjustments_mgL?: Record<string, number>;
+  note?: string;
+};
+
 export interface FeedDerived {
-  // chemistry
-  chemUsed: any;
+  // chemistry (used table after balance mode)
+  chemUsed: ChemistryInput;
 
   // sums (raw)
   rawTotalTDS: number;
@@ -43,14 +49,19 @@ export interface FeedDerived {
 
 /**
  * ✅ 중요: 이 훅은 내부에서 useMemo를 "항상" 호출해야 한다.
- * (cbMode나 isOpen에 따라 useMemo를 건너뛰면 훅 순서가 깨짐)
  */
 export function useFeedChargeBalance(
-  localChem: any,
+  localChem: ChemistryInput,
   cbMode: ChargeBalanceMode,
 ): FeedDerived {
   return useMemo(() => {
-    const { chemUsed, meta } = applyChargeBalance(localChem, cbMode);
+    const out = applyChargeBalance(localChem, cbMode) as unknown as {
+      chemUsed: ChemistryInput;
+      meta?: ChargeBalanceMeta;
+    };
+
+    const chemUsed = out?.chemUsed ?? localChem;
+    const meta = out?.meta;
 
     // raw
     const rawCationSum = sumMgL(localChem, CATIONS);

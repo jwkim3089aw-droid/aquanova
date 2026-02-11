@@ -1,42 +1,53 @@
 // ui/src/features/simulation/data/water_catalog.ts
 
+import type { FeedWaterType } from '../model/feedWater';
+
+export type WaterPresetCategory =
+  | 'Seawater'
+  | 'Brackish'
+  | 'Surface'
+  | 'Waste'
+  | 'Reuse';
+
+export type WaterPresetIons = {
+  // Cations (+)
+  NH4: number;
+  K: number;
+  Na: number;
+  Mg: number;
+  Ca: number;
+  Sr: number;
+  Ba: number;
+  Fe: number;
+  Mn: number;
+  // Anions (-)
+  HCO3: number;
+  NO3: number;
+  Cl: number;
+  F: number;
+  SO4: number;
+  Br: number;
+  PO4: number;
+  CO3: number;
+  // Neutrals
+  SiO2: number;
+  B: number;
+  CO2: number;
+};
+
 export type WaterPreset = {
   id: string;
   name: string; // ✅ 한국어 표시명
-  category: 'Seawater' | 'Brackish' | 'Surface' | 'Waste' | 'Reuse';
+  category: WaterPresetCategory;
   desc: string; // ✅ 간단 설명(한국어)
   temp_C: number;
   ph: number;
 
-  // ✅ WAVE 유사: 분류/세부분류 자동 채움용(옵션)
-  water_type?: string; // 해수/기수/지표수/폐수/재이용수
+  // ✅ 백엔드 enum과 동일한 값만 저장
+  water_type?: FeedWaterType;
   water_subtype?: string;
 
-  ions: {
-    // Cations (+)
-    NH4: number;
-    K: number;
-    Na: number;
-    Mg: number;
-    Ca: number;
-    Sr: number;
-    Ba: number;
-    Fe: number;
-    Mn: number;
-    // Anions (-)
-    HCO3: number;
-    NO3: number;
-    Cl: number;
-    F: number;
-    SO4: number;
-    Br: number;
-    PO4: number;
-    CO3: number;
-    // Neutrals
-    SiO2: number;
-    B: number;
-    CO2: number;
-  };
+  ions: WaterPresetIons;
 };
 
 // WAVE에서 흔히 쓰는 “대표 조성” 위주로 정리(너무 많지 않게)
@@ -51,7 +62,7 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '대표 해수 조성 (TDS≈35,000 mg/L)',
     temp_C: 25,
     ph: 8.1,
-    water_type: '해수',
+    water_type: 'Seawater',
     water_subtype: '태평양 평균',
     ions: {
       NH4: 0,
@@ -83,7 +94,7 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '대표 해수 조성 (TDS≈36,000 mg/L)',
     temp_C: 25,
     ph: 8.1,
-    water_type: '해수',
+    water_type: 'Seawater',
     water_subtype: '대서양 평균',
     ions: {
       NH4: 0,
@@ -115,7 +126,7 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '고염도 해수 (TDS≈45,000 mg/L)',
     temp_C: 32,
     ph: 8.3,
-    water_type: '해수',
+    water_type: 'Seawater',
     water_subtype: '홍해/아라비아만',
     ions: {
       NH4: 0,
@@ -147,7 +158,7 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '상대적 고염도 (TDS≈38,000 mg/L)',
     temp_C: 25,
     ph: 8.1,
-    water_type: '해수',
+    water_type: 'Seawater',
     water_subtype: '지중해',
     ions: {
       NH4: 0,
@@ -183,7 +194,7 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '대표 기수 조성 (TDS≈1,500 mg/L)',
     temp_C: 20,
     ph: 7.6,
-    water_type: '기수',
+    water_type: 'Brackish',
     water_subtype: '지하수 표준',
     ions: {
       NH4: 0.5,
@@ -215,7 +226,7 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '경도/스케일링 주의 (TDS≈3,000 mg/L)',
     temp_C: 20,
     ph: 7.5,
-    water_type: '기수',
+    water_type: 'Brackish',
     water_subtype: '고경도 지하수',
     ions: {
       NH4: 0.5,
@@ -247,7 +258,7 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '염지하수 (TDS≈10,000 mg/L)',
     temp_C: 25,
     ph: 7.8,
-    water_type: '기수',
+    water_type: 'Brackish',
     water_subtype: '염지하수',
     ions: {
       NH4: 1,
@@ -283,7 +294,7 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '저TDS 지표수 (TDS≈200~400 mg/L)',
     temp_C: 15,
     ph: 7.2,
-    water_type: '지표수',
+    water_type: 'Surface',
     water_subtype: '강물',
     ions: {
       NH4: 0.2,
@@ -315,7 +326,7 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '계절 변동 가능 (TDS≈250~500 mg/L)',
     temp_C: 15,
     ph: 7.4,
-    water_type: '지표수',
+    water_type: 'Surface',
     water_subtype: '호수/저수지',
     ions: {
       NH4: 0.2,
@@ -342,7 +353,7 @@ export const WATER_CATALOG: WaterPreset[] = [
   },
 
   // ==================================================
-  // 폐수 (Waste)
+  // 폐수 (Waste) -> 서버 enum: Wastewater
   // ==================================================
   {
     id: 'ww_cooling_tower_blowdown',
@@ -351,7 +362,7 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '실리카/경도 높음(스케일링 주의)',
     temp_C: 30,
     ph: 8.0,
-    water_type: '폐수',
+    water_type: 'Wastewater',
     water_subtype: '냉각탑 블로다운',
     ions: {
       NH4: 1,
@@ -383,7 +394,7 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: 'Na/Cl/SO4 높음, pH 높을 수 있음',
     temp_C: 35,
     ph: 9.0,
-    water_type: '폐수',
+    water_type: 'Wastewater',
     water_subtype: '섬유/염색',
     ions: {
       NH4: 5,
@@ -410,7 +421,7 @@ export const WATER_CATALOG: WaterPreset[] = [
   },
 
   // ==================================================
-  // 재이용수 (Reuse)
+  // 재이용수 (Reuse) -> 서버 enum에는 없으므로 Other로 저장
   // ==================================================
   {
     id: 'ru_municipal_secondary',
@@ -419,8 +430,8 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '암모니아/인 성분(바이오 파울링 주의)',
     temp_C: 25,
     ph: 7.1,
-    water_type: '재이용수',
-    water_subtype: '2차 처리수',
+    water_type: 'Other',
+    water_subtype: '재이용수 - 2차 처리수',
     ions: {
       NH4: 25,
       K: 20,
@@ -451,8 +462,8 @@ export const WATER_CATALOG: WaterPreset[] = [
     desc: '탁도 낮음(RO/NF 전처리 후단 가정)',
     temp_C: 25,
     ph: 7.0,
-    water_type: '재이용수',
-    water_subtype: '3차 처리수(UF)',
+    water_type: 'Other',
+    water_subtype: '재이용수 - 3차 처리수(UF)',
     ions: {
       NH4: 5,
       K: 18,

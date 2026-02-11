@@ -1,20 +1,48 @@
 // ui/src/features/simulation/data/membrane_catalog.ts
 
-// 1. 타입 정의 (이 파일에서 관리하거나 중앙 타입에서 가져옴)
+// 1. 타입 정의
 export interface MembraneSpec {
   id: string;
   name: string;
   vendor: string;
-  type: 'RO' | 'NF' | 'HRRO' | 'UF' | 'MF'; // ✅ 이 필드가 있어야 필터링이 됩니다!
+  type: 'RO' | 'NF' | 'HRRO' | 'UF' | 'MF';
   area_m2: number;
   A_lmh_bar: number; // Permeability
-  B_mps?: number; // Salt permeability (Optional)
+  B_mps?: number; // Salt permeability (m/s)
   salt_rejection_pct?: number;
 }
 
-// 2. 통합 데이터 리스트 (정석)
+// 2. 통합 데이터 리스트
 export const MEMBRANE_CATALOG: MembraneSpec[] = [
-  // --- RO Membranes ---
+  // ==========================================================================
+  // [수정됨] WAVE Matching Tuned Data (FilmTec SOAR)
+  // ==========================================================================
+  {
+    id: 'filmtec-soar-7000i',
+    name: 'FilmTec™ SOAR 7000i',
+    vendor: 'DuPont',
+    type: 'HRRO',
+    // [WAVE 역산 값 적용]
+    area_m2: 40.9, // 기존 37.0 -> 40.9 (2044 m² / 50 elements)
+    A_lmh_bar: 1.2, // 압력 보정 (조금 낮춰서 실제 고압 모사)
+    B_mps: 1.0e-9, // 수질 보정 (매우 낮춰서 WAVE의 200ppm 수준 달성)
+    salt_rejection_pct: 99.85,
+  },
+  {
+    id: 'filmtec-soar-6000i',
+    name: 'FilmTec™ SOAR 6000i',
+    vendor: 'DuPont',
+    type: 'HRRO',
+    // [동일 플랫폼 적용]
+    area_m2: 40.9,
+    A_lmh_bar: 1.1,
+    B_mps: 1.5e-9,
+    salt_rejection_pct: 99.8,
+  },
+
+  // ==========================================================================
+  // 기존 RO/NF/UF/MF 모델들은 그대로 유지
+  // ==========================================================================
   {
     id: 'bw30-400',
     name: 'BW30-400',
@@ -25,6 +53,7 @@ export const MEMBRANE_CATALOG: MembraneSpec[] = [
     B_mps: 1e-7,
     salt_rejection_pct: 99.5,
   },
+  // ... (나머지 기존 데이터들: sw30hr, tm820 등등 계속 이어짐) ...
   {
     id: 'sw30hr',
     name: 'SW30HR',
@@ -55,8 +84,6 @@ export const MEMBRANE_CATALOG: MembraneSpec[] = [
     B_mps: 2e-8,
     salt_rejection_pct: 99.7,
   },
-
-  // --- NF Membranes ---
   {
     id: 'nf90',
     name: 'NF90-400',
@@ -77,8 +104,6 @@ export const MEMBRANE_CATALOG: MembraneSpec[] = [
     B_mps: 5e-6,
     salt_rejection_pct: 50.0,
   },
-
-  // --- UF Membranes ---
   {
     id: 'dultra',
     name: 'dUltra UF',
@@ -95,8 +120,6 @@ export const MEMBRANE_CATALOG: MembraneSpec[] = [
     area_m2: 55,
     A_lmh_bar: 140,
   },
-
-  // --- MF Membranes ---
   {
     id: 'memcor',
     name: 'Memcor CP',
@@ -107,7 +130,7 @@ export const MEMBRANE_CATALOG: MembraneSpec[] = [
   },
 ];
 
-// Helper: 호환성 유지용 (필요하면 사용)
+// Helper: 호환성 유지용
 export function getFallbackMembrane(
   id: string | undefined,
 ): MembraneSpec | undefined {
