@@ -9,37 +9,17 @@ import { UnitMode, clampf, unitLabel } from '../model/types';
 import { IonTable } from './IonTable';
 
 import {
-  ANIONS,
   CATIONS,
+  ANIONS,
   NEUTRALS,
-  MW,
-  applyChargeBalance,
-  type ChargeBalanceMode,
   fmtNumber,
-  n0,
-  roundTo,
+  type ChargeBalanceMode,
 } from '../chemistry';
 
-type QuickState = { nacl_mgL: number; mgso4_mgL: number };
-
-export type FeedDerived = {
-  totalTDS: number;
-  rawTotalTDS: number;
-  calcHardness: number;
-  calcAlkalinity: number;
-  estConductivity_uScm: number;
-
-  chargeBalance_meqL: number;
-  rawChargeBalance_meqL: number;
-
-  cationMeq: number;
-  anionMeq: number;
-  rawCationMeq: number;
-  rawAnionMeq: number;
-
-  adjustmentText: string;
-  cbNote?: string;
-};
+import { useFeedPreset } from '../hooks/useFeedPreset';
+import { useSaltQuickEntry, type QuickState } from '../hooks/useSaltQuickEntry';
+import { useChargeBalanceActions } from '../hooks/useChargeBalanceActions';
+import type { FeedDerived } from '../hooks/useFeedChargeBalance';
 
 interface FeedInspectorBodyProps {
   localFeed: any;
@@ -63,23 +43,6 @@ interface FeedInspectorBodyProps {
   derived: FeedDerived;
 }
 
-const WATER_TYPE_OPTIONS = [
-  { value: '해수', label: '해수' },
-  { value: '기수', label: '기수/지하수' },
-  { value: '지표수', label: '지표수(강/호수)' },
-  { value: '폐수', label: '폐수(산업/공정)' },
-  { value: '재이용수', label: '재이용수(하수처리수)' },
-];
-
-function categoryToWaterType(category: string | undefined | null): string {
-  if (category === 'Seawater') return '해수';
-  if (category === 'Brackish') return '기수';
-  if (category === 'Surface') return '지표수';
-  if (category === 'Waste') return '폐수';
-  if (category === 'Reuse') return '재이용수';
-  return '기수';
-}
-
 export function FeedInspectorBody(props: FeedInspectorBodyProps) {
   const {
     localFeed,
@@ -97,115 +60,19 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
     derived,
   } = props;
 
-  const cbModeLabel: Record<ChargeBalanceMode, string> = {
-    off: 'OFF(원본 그대로)',
-    anions: 'Anions(Cl 우선)',
-    cations: 'Cations(Na 우선)',
-    all: 'All(양·음이온 스케일)',
-  };
+  const { waterTypeOptions, subtypeSuggestions, applyPreset } = useFeedPreset(
+    localFeed,
+    setLocalFeed,
+    setLocalChem,
+  );
 
-  const subtypeSuggestions = React.useMemo(() => {
-    const wt = String(localFeed?.water_type ?? '');
-    if (!wt) return [];
-    const cats: Record<string, string> = {
-      해수: 'Seawater',
-      기수: 'Brackish',
-      지표수: 'Surface',
-      폐수: 'Waste',
-      재이용수: 'Reuse',
-    };
-    const cat = cats[wt];
-    if (!cat) return [];
-    return WATER_CATALOG.filter((p) => p.category === (cat as any)).map(
-      (p) => p.name,
-    );
-  }, [localFeed?.water_type]);
+  const { applyQuickEntry } = useSaltQuickEntry(quick, setQuick, setLocalChem);
 
-  const applyPreset = (presetId: string) => {
-    const preset = WATER_CATALOG.find((p) => p.id === presetId);
-    if (!preset) return;
-
-    const ions = preset.ions;
-    const calcTDS = Object.values(ions).reduce((sum, v) => sum + (v || 0), 0);
-
-    const wt =
-      (preset as any).water_type ?? categoryToWaterType(preset.category);
-    const ws = (preset as any).water_subtype ?? preset.name;
-
-    setLocalFeed((prev: any) => ({
-      ...prev,
-      temperature_C: preset.temp_C,
-      ph: preset.ph,
-      water_type: wt,
-      water_subtype: ws,
-      tds_mgL: calcTDS,
-      temp_min_C: prev?.temp_min_C ?? preset.temp_C,
-      temp_max_C: prev?.temp_max_C ?? preset.temp_C,
-      feed_note: (prev?.feed_note ?? '').trim()
-        ? prev.feed_note
-        : `${preset.desc}`,
-    }));
-
-    const r3 = (x: any) => roundTo(n0(x), 3);
-
-    setLocalChem({
-      nh4_mgL: r3(ions.NH4),
-      k_mgL: r3(ions.K),
-      na_mgL: r3(ions.Na),
-      mg_mgL: r3(ions.Mg),
-      ca_mgL: r3(ions.Ca),
-      sr_mgL: r3(ions.Sr),
-      ba_mgL: r3(ions.Ba),
-      fe_mgL: r3(ions.Fe),
-      mn_mgL: r3(ions.Mn),
-
-      hco3_mgL: r3(ions.HCO3),
-      no3_mgL: r3(ions.NO3),
-      cl_mgL: r3(ions.Cl),
-      f_mgL: r3(ions.F),
-      so4_mgL: r3(ions.SO4),
-      br_mgL: r3(ions.Br),
-      po4_mgL: r3(ions.PO4),
-      co3_mgL: r3(ions.CO3),
-
-      sio2_mgL: r3(ions.SiO2),
-      b_mgL: r3(ions.B),
-      co2_mgL: r3(ions.CO2),
-
-      alkalinity_mgL_as_CaCO3: null,
-      calcium_hardness_mgL_as_CaCO3: null,
-    });
-  };
-
-  const applyQuickEntry = () => {
-    const nacl = Math.max(0, n0(quick.nacl_mgL));
-    const mgso4 = Math.max(0, n0(quick.mgso4_mgL));
-
-    const mwNaCl = MW.Na + MW.Cl;
-    const addNa = mwNaCl > 0 ? nacl * (MW.Na / mwNaCl) : 0;
-    const addCl = mwNaCl > 0 ? nacl * (MW.Cl / mwNaCl) : 0;
-
-    const mwMgSO4 = MW.Mg + MW.SO4;
-    const addMg = mwMgSO4 > 0 ? mgso4 * (MW.Mg / mwMgSO4) : 0;
-    const addSO4 = mwMgSO4 > 0 ? mgso4 * (MW.SO4 / mwMgSO4) : 0;
-
-    setLocalChem((prev: any) => ({
-      ...prev,
-      na_mgL: roundTo(n0(prev?.na_mgL) + addNa, 3),
-      cl_mgL: roundTo(n0(prev?.cl_mgL) + addCl, 3),
-      mg_mgL: roundTo(n0(prev?.mg_mgL) + addMg, 3),
-      so4_mgL: roundTo(n0(prev?.so4_mgL) + addSO4, 3),
-    }));
-
-    setQuick({ nacl_mgL: 0, mgso4_mgL: 0 });
-  };
-
-  // WAVE처럼 “표에 반영”(입력값 자체를 보정값으로 덮어쓰기)
-  const applyBalanceIntoTable = () => {
-    if (cbMode === 'off') return;
-    const r = applyChargeBalance(localChem, cbMode);
-    setLocalChem({ ...localChem, ...r.chemUsed });
-  };
+  const { cbModeLabel, applyBalanceIntoTable } = useChargeBalanceActions(
+    localChem,
+    cbMode,
+    setLocalChem,
+  );
 
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
@@ -215,6 +82,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
           <label className="text-[10px] font-bold text-blue-400 mb-2 uppercase tracking-wider block">
             프리셋 라이브러리
           </label>
+
           <select
             className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
             onChange={(e) => applyPreset(e.target.value)}
@@ -223,6 +91,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
             <option value="" disabled>
               -- 물 조성 선택 --
             </option>
+
             <optgroup label="해수">
               {WATER_CATALOG.filter((w) => w.category === 'Seawater').map(
                 (w) => (
@@ -232,6 +101,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 ),
               )}
             </optgroup>
+
             <optgroup label="기수/지하수">
               {WATER_CATALOG.filter((w) => w.category === 'Brackish').map(
                 (w) => (
@@ -241,6 +111,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 ),
               )}
             </optgroup>
+
             <optgroup label="지표수(강/호수)">
               {WATER_CATALOG.filter((w) => w.category === 'Surface').map(
                 (w) => (
@@ -250,6 +121,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 ),
               )}
             </optgroup>
+
             <optgroup label="폐수(산업/공정)">
               {WATER_CATALOG.filter((w) => w.category === 'Waste').map((w) => (
                 <option key={w.id} value={w.id}>
@@ -257,6 +129,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 </option>
               ))}
             </optgroup>
+
             <optgroup label="재이용수(하수처리수)">
               {WATER_CATALOG.filter((w) => w.category === 'Reuse').map((w) => (
                 <option key={w.id} value={w.id}>
@@ -279,7 +152,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 }
               >
                 <option value="">(선택)</option>
-                {WATER_TYPE_OPTIONS.map((o) => (
+                {waterTypeOptions.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
@@ -370,6 +243,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
             </div>
           </div>
 
+          {/* Quick entry */}
           <div className="mt-3 pt-3 border-t border-slate-800/80">
             <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -379,6 +253,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 입력값을 이온으로 분해
               </div>
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <Field label="NaCl (mg/L)">
                 <Input
@@ -389,6 +264,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                   }
                 />
               </Field>
+
               <Field label="MgSO4 (mg/L)">
                 <Input
                   className="h-9 text-right font-mono"
@@ -398,6 +274,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                   }
                 />
               </Field>
+
               <div className="col-span-2 flex justify-end">
                 <button
                   onClick={applyQuickEntry}
@@ -409,6 +286,7 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
             </div>
           </div>
 
+          {/* Charge balance */}
           <div className="mt-3 pt-3 border-t border-slate-800/80">
             <div className="flex items-center justify-between mb-2">
               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">

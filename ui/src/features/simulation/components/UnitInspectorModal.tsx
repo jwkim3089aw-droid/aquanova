@@ -3,8 +3,6 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Node } from 'reactflow';
 
 import {
-  Field,
-  Input,
   HRROEditor,
   ROEditor,
   UFEditor,
@@ -25,25 +23,11 @@ import {
 } from '../model/types';
 
 import { updateUnitCfg } from '../model/logic';
-
 import { useBlockDeleteKeysWhenOpen } from '../hooks/useBlockDeleteKeysWhenOpen';
 
-import {
-  ANIONS,
-  CATIONS,
-  NEUTRALS,
-  MW,
-  applyChargeBalance,
-  type ChargeBalanceMode,
-  fmtNumber,
-  n0,
-  roundTo,
-  sumMeqL,
-  sumMgL,
-  mgL_to_meqL,
-} from '../chemistry';
-
-import { FeedInspectorBody, type FeedDerived } from './FeedInspectorBody';
+import { FeedInspectorBody } from './FeedInspectorBody';
+import { useFeedChargeBalance } from '../hooks/useFeedChargeBalance';
+import { roundTo, type ChargeBalanceMode } from '../chemistry';
 
 // ------------------------------------------------------------------
 // Unit / Feed Settings Modal
@@ -99,6 +83,8 @@ export function UnitInspectorModal(props: InspectorProps) {
     setFeedChemistry,
     unitMode,
     setNodes,
+    // setEdges,
+    // setSelectedNodeId,
   } = props;
 
   useBlockDeleteKeysWhenOpen(isOpen);
@@ -113,8 +99,6 @@ export function UnitInspectorModal(props: InspectorProps) {
   // “한 화면 맞춤” 모드
   const [fitMode, setFitMode] = useState(true);
   const [fitScale, setFitScale] = useState(1);
-
-  // 글씨 너무 작아지는 문제 방지: minScale 이하로는 스크롤 허용
   const [fitNeedsScroll, setFitNeedsScroll] = useState(false);
 
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -226,99 +210,38 @@ export function UnitInspectorModal(props: InspectorProps) {
     };
   }, [isOpen, fitActive]);
 
+  // ✅✅✅ 핵심: 커스텀 훅은 "항상" 호출되어야 함 (return null 이전)
+  const derived = useFeedChargeBalance(localChem, cbMode);
+
+  // 이제부터 return null 해도 훅 순서는 깨지지 않음
   if (!isOpen || (!selEndpoint && !selUnit)) return null;
 
   const isFeedNode = selEndpoint?.data.role === 'feed';
   const isProductNode = selEndpoint?.data.role === 'product';
 
-  // 전하 보정 적용 (KPI/Apply에 사용)
-  const { chemUsed, meta: cbMeta } = applyChargeBalance(localChem, cbMode);
-
-  // 원본 기준(참고용)
-  const rawCationSum = sumMgL(localChem, CATIONS);
-  const rawAnionSum = sumMgL(localChem, ANIONS);
-  const rawNeutralSum = sumMgL(localChem, NEUTRALS);
-  const rawTotalTDS = rawCationSum + rawAnionSum + rawNeutralSum;
-
-  const rawCationMeq = sumMeqL(localChem, CATIONS);
-  const rawAnionMeq = sumMeqL(localChem, ANIONS);
-  const rawChargeBalance_meqL = rawCationMeq - rawAnionMeq;
-
-  // 보정/사용 기준
-  const cationSum = sumMgL(chemUsed, CATIONS);
-  const anionSum = sumMgL(chemUsed, ANIONS);
-  const neutralSum = sumMgL(chemUsed, NEUTRALS);
-  const totalTDS = cationSum + anionSum + neutralSum;
-
-  const cationMeq = sumMeqL(chemUsed, CATIONS);
-  const anionMeq = sumMeqL(chemUsed, ANIONS);
-  const chargeBalance_meqL = cationMeq - anionMeq;
-
-  const ca_meq = mgL_to_meqL(n0(chemUsed?.ca_mgL), MW.Ca, +2);
-  const mg_meq = mgL_to_meqL(n0(chemUsed?.mg_mgL), MW.Mg, +2);
-  const calcHardness = (ca_meq + mg_meq) * 50.0;
-
-  const hco3_meq = mgL_to_meqL(n0(chemUsed?.hco3_mgL), MW.HCO3, -1);
-  const co3_meq = mgL_to_meqL(n0(chemUsed?.co3_mgL), MW.CO3, -2);
-  const calcAlkalinity = (hco3_meq + co3_meq) * 50.0;
-
-  const estConductivity_uScm = totalTDS * 1.7;
-
-  const adjustmentText = (() => {
-    const entries = Object.entries(cbMeta.adjustments_mgL);
-    if (cbMode === 'off' || entries.length === 0) return '';
-    const top = entries
-      .sort((a, b) => Math.abs(b[1] as number) - Math.abs(a[1] as number))
-      .slice(0, 4)
-      .map(
-        ([k, v]) =>
-          `${k.replace('_mgL', '')} ${
-            (v as number) > 0 ? '+' : ''
-          }${fmtNumber(v as number, 3)} mg/L`,
-      );
-    return top.join(', ');
-  })();
+  const compact = fitActive;
 
   const handleApply = () => {
     if (isFeedNode) {
-      const chemForApply = cbMode === 'off' ? localChem : chemUsed;
-
       const chemOut = {
-        ...chemForApply,
-        alkalinity_mgL_as_CaCO3: calcAlkalinity,
-        calcium_hardness_mgL_as_CaCO3: calcHardness,
+        ...(derived.chemUsed ?? localChem),
+        alkalinity_mgL_as_CaCO3: derived.calcAlkalinity,
+        calcium_hardness_mgL_as_CaCO3: derived.calcHardness,
       };
 
       setFeed({
         ...localFeed,
-        tds_mgL: roundTo(totalTDS, 2),
+        tds_mgL: roundTo(derived.totalTDS, 2),
         water_type: (localFeed.water_type ?? '') || null,
         water_subtype: (localFeed.water_subtype ?? '') || null,
         charge_balance_mode: cbMode,
       });
+
       setFeedChemistry(chemOut);
     } else if (selUnit && localCfg) {
       updateUnitCfg(selUnit.id, localCfg, setNodes);
     }
     onClose();
-  };
-
-  const compact = fitActive;
-
-  const derived: FeedDerived = {
-    totalTDS,
-    rawTotalTDS,
-    calcHardness,
-    calcAlkalinity,
-    estConductivity_uScm,
-    chargeBalance_meqL,
-    rawChargeBalance_meqL,
-    cationMeq,
-    anionMeq,
-    rawCationMeq,
-    rawAnionMeq,
-    adjustmentText,
-    cbNote: cbMeta.note,
   };
 
   return (
@@ -334,9 +257,7 @@ export function UnitInspectorModal(props: InspectorProps) {
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/50 shrink-0">
           <div className="flex items-center gap-2">
             <div
-              className={`w-2 h-2 rounded-full ${
-                selEndpoint ? 'bg-blue-500' : 'bg-emerald-500'
-              }`}
+              className={`w-2 h-2 rounded-full ${selEndpoint ? 'bg-blue-500' : 'bg-emerald-500'}`}
             />
             <h2 className="text-sm font-bold text-slate-100 tracking-wide">
               {isFeedNode
@@ -402,9 +323,7 @@ export function UnitInspectorModal(props: InspectorProps) {
                 ? 'overflow-auto'
                 : 'overflow-hidden'
               : 'overflow-y-auto'
-          } ${
-            compact ? 'p-3' : 'p-4'
-          } scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent`}
+          } ${compact ? 'p-3' : 'p-4'} scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent`}
         >
           <div
             ref={contentRef}
