@@ -1,13 +1,8 @@
-// ui/src/features/simulation/components/FeedInspectorBody.tsx
 import React from 'react';
-
 import { Field, Input } from '..';
 import { WATER_CATALOG } from '../data/water_catalog';
-
 import { UnitMode, clampf, unitLabel } from '../model/types';
-
 import { IonTable } from './IonTable';
-
 import {
   CATIONS,
   ANIONS,
@@ -15,67 +10,55 @@ import {
   fmtNumber,
   type ChargeBalanceMode,
 } from '../chemistry';
-
 import { useFeedPreset } from '../hooks/useFeedPreset';
 import { useSaltQuickEntry, type QuickState } from '../hooks/useSaltQuickEntry';
 import { useChargeBalanceActions } from '../hooks/useChargeBalanceActions';
 import type { FeedDerived } from '../hooks/useFeedChargeBalance';
 
+// 타입 정의 (동일)
 type FeedDraft = {
   temperature_C: number;
   ph: number;
   flow_m3h: number;
-
   water_type?: string | null;
   water_subtype?: string | null;
   feed_note?: string | null;
-
   temp_min_C?: number | null;
   temp_max_C?: number | null;
-
   turbidity_ntu?: number | null;
   tss_mgL?: number | null;
   sdi15?: number | null;
   toc_mgL?: number | null;
-
   [k: string]: unknown;
 };
 
-interface FeedInspectorBodyProps {
-  localFeed: FeedDraft;
-  setLocalFeed: React.Dispatch<React.SetStateAction<FeedDraft>>;
-
-  localChem: any;
-  setLocalChem: React.Dispatch<React.SetStateAction<any>>;
-
-  quick: QuickState;
-  setQuick: React.Dispatch<React.SetStateAction<QuickState>>;
-
-  detailsOpen: boolean;
-  setDetailsOpen: React.Dispatch<React.SetStateAction<boolean>>;
-
-  cbMode: ChargeBalanceMode;
-  setCbMode: React.Dispatch<React.SetStateAction<ChargeBalanceMode>>;
-
-  unitMode: UnitMode;
-  compact: boolean;
-
-  derived: FeedDerived;
-}
-
+// 헬퍼 함수
 function num0(s: string): number {
   if (s.trim() === '') return 0;
   const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 }
-
 function numOrNull(s: string): number | null {
   if (s.trim() === '') return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
 
-export function FeedInspectorBody(props: FeedInspectorBodyProps) {
+// 카드 스타일 (패딩을 더 줄임: p-2)
+const Card = ({ children, title, className = '' }: any) => (
+  <div
+    className={`bg-slate-900/40 border border-slate-800/60 rounded-lg p-2 ${className}`}
+  >
+    {title && (
+      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+        {title}
+      </div>
+    )}
+    {children}
+  </div>
+);
+
+export function FeedInspectorBody(props: any) {
   const {
     localFeed,
     setLocalFeed,
@@ -88,7 +71,6 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
     cbMode,
     setCbMode,
     unitMode,
-    compact,
     derived,
   } = props;
 
@@ -99,31 +81,31 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
   );
 
   const { applyQuickEntry } = useSaltQuickEntry(quick, setQuick, setLocalChem);
-
-  const { cbModeLabel, applyBalanceIntoTable } = useChargeBalanceActions(
+  const { applyBalanceIntoTable } = useChargeBalanceActions(
     localChem,
     cbMode,
     setLocalChem,
   );
 
   return (
-    <div className={compact ? 'space-y-3' : 'space-y-4'}>
-      {/* Top */}
-      <div className="grid grid-cols-12 gap-4">
-        <div className="col-span-12 lg:col-span-7 p-3 bg-slate-900/40 border border-slate-800 rounded-lg">
-          <label className="text-[10px] font-bold text-blue-400 mb-2 uppercase tracking-wider block">
-            프리셋 라이브러리
-          </label>
-
+    <div className="h-full w-full grid grid-cols-12 gap-3">
+      {/* 🔴 [LEFT COLUMN] 설정 영역: 고밀도 배치 (스크롤 제거 목적) */}
+      <div className="col-span-12 xl:col-span-3 flex flex-col gap-2 h-full overflow-hidden">
+        {/* 1. 통합 기본 설정 (Definition) */}
+        {/* 프리셋, 분류, 운전조건, 메모를 모두 이 카드 하나에 담아 위계질서를 잡음 */}
+        <Card
+          title="원수 정의 및 조건 (Definition)"
+          className="flex flex-col gap-2 shrink-0"
+        >
+          {/* A. 프리셋 */}
           <select
-            className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+            className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
             onChange={(e) => applyPreset(e.target.value)}
             defaultValue=""
           >
             <option value="" disabled>
-              -- 물 조성 선택 --
+              -- 프리셋 불러오기 --
             </option>
-
             <optgroup label="해수">
               {WATER_CATALOG.filter((w) => w.category === 'Seawater').map(
                 (w) => (
@@ -133,60 +115,31 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 ),
               )}
             </optgroup>
-
-            <optgroup label="기수/지하수">
-              {WATER_CATALOG.filter((w) => w.category === 'Brackish').map(
+            <optgroup label="기수/지하수/기타">
+              {WATER_CATALOG.filter((w) => w.category !== 'Seawater').map(
                 (w) => (
                   <option key={w.id} value={w.id}>
                     {w.name}
                   </option>
                 ),
               )}
-            </optgroup>
-
-            <optgroup label="지표수(강/호수)">
-              {WATER_CATALOG.filter((w) => w.category === 'Surface').map(
-                (w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ),
-              )}
-            </optgroup>
-
-            <optgroup label="폐수(산업/공정)">
-              {WATER_CATALOG.filter((w) => w.category === 'Waste').map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </optgroup>
-
-            <optgroup label="재이용수(하수처리수)">
-              {WATER_CATALOG.filter((w) => w.category === 'Reuse').map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
             </optgroup>
           </select>
 
-          <div className="mt-3 grid grid-cols-12 gap-3">
-            <div className="col-span-12 md:col-span-4">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                원수 분류
-              </label>
+          {/* B. 분류 + 출처 (한 줄 배치) */}
+          <div className="flex gap-2">
+            <div className="w-[35%]">
               <select
-                className="w-full h-9 bg-slate-950 border border-slate-700 rounded px-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                className="w-full h-7 bg-slate-950 border border-slate-700 rounded px-1 text-xs text-slate-200"
                 value={String(localFeed.water_type ?? '')}
                 onChange={(e) =>
-                  setLocalFeed((prev) => ({
-                    ...prev,
+                  setLocalFeed((p: any) => ({
+                    ...p,
                     water_type: e.target.value,
                   }))
                 }
               >
-                <option value="">(선택)</option>
+                <option value="">(분류)</option>
                 {waterTypeOptions.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
@@ -194,23 +147,19 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
                 ))}
               </select>
             </div>
-
-            <div className="col-span-12 md:col-span-8">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                원수 세부 분류(출처)
-              </label>
+            <div className="flex-1">
               <input
                 type="text"
                 list="water-subtype-suggestions"
-                className="w-full h-9 bg-slate-950 border border-slate-700 rounded px-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                className="w-full h-7 bg-slate-950 border border-slate-700 rounded px-2 text-xs text-slate-200 placeholder:text-slate-600"
                 value={String(localFeed.water_subtype ?? '')}
-                placeholder="예: 태평양 평균 / 아라비아만 / 냉각탑 블로다운 ..."
                 onChange={(e) =>
-                  setLocalFeed((prev) => ({
-                    ...prev,
+                  setLocalFeed((p: any) => ({
+                    ...p,
                     water_subtype: e.target.value,
                   }))
                 }
+                placeholder="세부 지점/출처 입력"
               />
               <datalist id="water-subtype-suggestions">
                 {subtypeSuggestions.map((s) => (
@@ -220,447 +169,310 @@ export function FeedInspectorBody(props: FeedInspectorBodyProps) {
             </div>
           </div>
 
-          <div className="mt-3">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-              추가 정보(메모)
-            </label>
-            <textarea
-              className="w-full h-16 bg-slate-950 border border-slate-700 rounded px-2 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
-              value={String(localFeed.feed_note ?? '')}
-              placeholder="(선택) 원수 특이사항/전처리/샘플링 정보 등"
-              onChange={(e) =>
-                setLocalFeed((prev) => ({
-                  ...prev,
-                  feed_note: e.target.value,
-                }))
-              }
-            />
-          </div>
-        </div>
-
-        <div className="col-span-12 lg:col-span-5 p-3 bg-slate-900/40 border border-slate-800 rounded-lg">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={`온도 (${unitLabel('temp', unitMode)})`}>
+          {/* C. 운전 조건 (3단 한 줄) */}
+          <div className="flex gap-2 items-center bg-slate-950/30 p-1.5 rounded border border-slate-800/30">
+            <div className="flex-1">
+              <div className="text-[9px] text-slate-500 mb-0.5">
+                유량({unitLabel('flow', unitMode)})
+              </div>
               <Input
-                className="h-9 text-center font-mono"
+                className="h-6 w-full font-bold text-emerald-400 text-center font-mono text-xs"
+                value={localFeed.flow_m3h}
+                onChange={(e) =>
+                  setLocalFeed((p: any) => ({
+                    ...p,
+                    flow_m3h: num0(e.target.value),
+                  }))
+                }
+              />
+            </div>
+            <div className="w-px h-6 bg-slate-800"></div>
+            <div className="flex-1">
+              <div className="text-[9px] text-slate-500 mb-0.5">
+                온도({unitLabel('temp', unitMode)})
+              </div>
+              <Input
+                className="h-6 w-full text-center font-mono text-xs"
                 value={localFeed.temperature_C}
                 onChange={(e) =>
-                  setLocalFeed((prev) => ({
-                    ...prev,
+                  setLocalFeed((p: any) => ({
+                    ...p,
                     temperature_C: num0(e.target.value),
                   }))
                 }
               />
-            </Field>
-
-            <Field label="pH (@25°C)">
+            </div>
+            <div className="w-px h-6 bg-slate-800"></div>
+            <div className="flex-1">
+              <div className="text-[9px] text-slate-500 mb-0.5">pH</div>
               <Input
-                className="h-9 text-center font-mono"
+                className="h-6 w-full text-center font-mono text-xs"
                 value={localFeed.ph}
                 min={0}
                 max={14}
                 onChange={(e) =>
-                  setLocalFeed((prev) => ({
-                    ...prev,
+                  setLocalFeed((p: any) => ({
+                    ...p,
                     ph: clampf(num0(e.target.value), 0, 14),
                   }))
                 }
               />
-            </Field>
-
-            <div className="col-span-2">
-              <Field label={`유입 유량 (${unitLabel('flow', unitMode)})`}>
-                <Input
-                  className="h-9 font-bold text-emerald-400 text-right font-mono"
-                  value={localFeed.flow_m3h}
-                  onChange={(e) =>
-                    setLocalFeed((prev) => ({
-                      ...prev,
-                      flow_m3h: num0(e.target.value),
-                    }))
-                  }
-                />
-              </Field>
             </div>
           </div>
 
-          {/* Quick entry */}
-          <div className="mt-3 pt-3 border-t border-slate-800/80">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                빠른 입력(염 혼합)
-              </div>
-              <div className="text-[10px] text-slate-500">
-                입력값을 이온으로 분해
-              </div>
+          {/* D. 메모 (여기로 복귀!) */}
+          <div>
+            <div className="text-[9px] text-slate-500 mb-1 flex justify-between">
+              <span>메모 / 특이사항</span>
+              <span className="text-slate-600 italic">Optional</span>
             </div>
+            <textarea
+              className="w-full h-14 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300 resize-none focus:outline-none focus:border-blue-500 placeholder:text-slate-700"
+              placeholder="프로젝트명, 샘플링 날짜 등..."
+              value={localFeed.feed_note ?? ''}
+              onChange={(e) =>
+                setLocalFeed((p: any) => ({ ...p, feed_note: e.target.value }))
+              }
+            />
+          </div>
+        </Card>
 
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="NaCl (mg/L)">
+        {/* 2. 도구 모음 (Tools) - 남는 공간 활용 */}
+        <div className="flex-1 flex flex-col gap-2 min-h-0">
+          {/* Quick Salt */}
+          <Card title="빠른 입력 (Quick Salt)" className="shrink-0">
+            <div className="flex gap-2 mb-2">
+              <div className="flex-1">
+                <div className="text-[9px] text-slate-500 mb-0.5">NaCl</div>
                 <Input
-                  className="h-9 text-right font-mono"
+                  className="h-7 w-full text-right font-mono text-xs"
                   value={quick.nacl_mgL}
                   onChange={(e) =>
                     setQuick({ ...quick, nacl_mgL: num0(e.target.value) })
                   }
                 />
-              </Field>
-
-              <Field label="MgSO4 (mg/L)">
+              </div>
+              <div className="flex-1">
+                <div className="text-[9px] text-slate-500 mb-0.5">MgSO4</div>
                 <Input
-                  className="h-9 text-right font-mono"
+                  className="h-7 w-full text-right font-mono text-xs"
                   value={quick.mgso4_mgL}
                   onChange={(e) =>
                     setQuick({ ...quick, mgso4_mgL: num0(e.target.value) })
                   }
                 />
-              </Field>
-
-              <div className="col-span-2 flex justify-end">
-                <button
-                  onClick={applyQuickEntry}
-                  className="px-3 py-2 rounded text-xs font-bold text-white bg-slate-700 hover:bg-slate-600 border border-slate-600"
-                >
-                  이온에 반영
-                </button>
               </div>
             </div>
-          </div>
+            <button
+              onClick={applyQuickEntry}
+              className="w-full py-1.5 rounded text-[10px] font-bold text-slate-400 bg-slate-800 hover:text-slate-200 hover:bg-slate-700 transition-colors border border-slate-700"
+            >
+              ▼ 이온 농도에 추가
+            </button>
+          </Card>
 
-          {/* Charge balance */}
-          <div className="mt-3 pt-3 border-t border-slate-800/80">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                전하 밸런스 보정(WAVE)
-              </div>
-              <div className="text-[10px] text-slate-500">
-                C≈A 되도록 자동 보정
-              </div>
-            </div>
-
-            <div className="grid grid-cols-12 gap-2 items-center">
-              <div className="col-span-8">
-                <select
-                  className="w-full h-9 bg-slate-950 border border-slate-700 rounded px-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500"
-                  value={cbMode}
-                  onChange={(e) =>
-                    setCbMode(e.target.value as ChargeBalanceMode)
-                  }
-                >
-                  <option value="off">OFF(원본 그대로)</option>
-                  <option value="anions">Anions(Cl 우선)</option>
-                  <option value="cations">Cations(Na 우선)</option>
-                  <option value="all">All(양·음이온 스케일)</option>
-                </select>
-              </div>
-
-              <div className="col-span-4 flex justify-end">
-                <button
-                  onClick={applyBalanceIntoTable}
-                  disabled={cbMode === 'off'}
-                  className={`px-3 py-2 rounded text-xs font-bold border ${
-                    cbMode === 'off'
-                      ? 'text-slate-500 bg-slate-900/30 border-slate-800 cursor-not-allowed'
-                      : 'text-white bg-slate-700 hover:bg-slate-600 border-slate-600'
-                  }`}
-                  title="WAVE처럼 이온표 숫자 자체를 보정값으로 덮어씁니다."
-                >
-                  표에 반영
-                </button>
-              </div>
-
-              <div className="col-span-12 text-[10px] text-slate-500">
-                모드:{' '}
-                <span className="text-slate-200 font-semibold">
-                  {cbModeLabel[cbMode]}
-                </span>
-                {' · '} 원본 Δ(C-A):{' '}
-                <span className="font-mono text-slate-300">
-                  {fmtNumber(derived.rawChargeBalance_meqL, 3)}
-                </span>{' '}
-                meq/L {' → '} 보정 Δ(C-A):{' '}
-                <span className="font-mono text-emerald-300">
-                  {fmtNumber(derived.chargeBalance_meqL, 3)}
-                </span>{' '}
-                meq/L
-              </div>
-
-              {derived.adjustmentText && (
-                <div className="col-span-12 text-[10px] text-slate-500">
-                  보정내용(상위):{' '}
-                  <span className="text-slate-300 font-mono">
-                    {derived.adjustmentText}
-                  </span>
-                </div>
-              )}
-
-              {derived.cbNote && (
-                <div className="col-span-12 text-[10px] text-amber-300/80">
-                  {derived.cbNote}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* KPI */}
-      <div className="grid grid-cols-12 gap-3">
-        <div className="col-span-12 md:col-span-4 bg-slate-900/55 border border-slate-800 rounded-lg p-3">
-          <div className="text-[10px] font-bold text-slate-500 uppercase">
-            TDS {cbMode !== 'off' ? '(보정 적용)' : ''}
-          </div>
-          <div className="text-xl font-mono text-emerald-400 font-bold">
-            {fmtNumber(derived.totalTDS, 1)}{' '}
-            <span className="text-xs font-normal text-slate-600">mg/L</span>
-          </div>
-          {cbMode !== 'off' && (
-            <div className="text-[10px] text-slate-500 mt-1">
-              원본:{' '}
-              <span className="font-mono">
-                {fmtNumber(derived.rawTotalTDS, 1)}
-              </span>{' '}
-              mg/L
-            </div>
-          )}
-        </div>
-
-        <div className="col-span-12 md:col-span-4 bg-slate-900/55 border border-slate-800 rounded-lg p-3">
-          <div className="text-[10px] font-bold text-slate-500 uppercase">
-            경도(Hardness)
-          </div>
-          <div className="text-xl font-mono text-blue-300 font-semibold">
-            {fmtNumber(derived.calcHardness, 1)}{' '}
-            <span className="text-xs font-normal text-slate-600">as CaCO3</span>
-          </div>
-        </div>
-
-        <div className="col-span-12 md:col-span-4 bg-slate-900/55 border border-slate-800 rounded-lg p-3">
-          <div className="text-[10px] font-bold text-slate-500 uppercase">
-            알칼리도(Alkalinity)
-          </div>
-          <div className="text-xl font-mono text-blue-300 font-semibold">
-            {fmtNumber(derived.calcAlkalinity, 1)}{' '}
-            <span className="text-xs font-normal text-slate-600">as CaCO3</span>
-          </div>
-        </div>
-
-        <div className="col-span-12 grid grid-cols-3 gap-3">
-          <div className="bg-slate-900/35 border border-slate-800 rounded-lg p-3">
-            <div className="text-[10px] text-slate-500 uppercase">
-              전하 밸런스
-            </div>
-            <div className="text-sm font-mono text-slate-200">
-              {fmtNumber(derived.chargeBalance_meqL, 3)}{' '}
-              <span className="text-slate-500">meq/L</span>
-            </div>
-            {cbMode !== 'off' && (
-              <div className="text-[10px] text-slate-500 mt-1">
-                원본:{' '}
-                <span className="font-mono">
-                  {fmtNumber(derived.rawChargeBalance_meqL, 3)}
-                </span>{' '}
-                meq/L
-              </div>
-            )}
-          </div>
-
-          <div className="bg-slate-900/35 border border-slate-800 rounded-lg p-3">
-            <div className="text-[10px] text-slate-500 uppercase">
-              전도도(추정)
-            </div>
-            <div className="text-sm font-mono text-slate-200">
-              {fmtNumber(derived.estConductivity_uScm, 0)}{' '}
-              <span className="text-slate-500">µS/cm</span>
-            </div>
-          </div>
-
-          <div className="bg-slate-900/35 border border-slate-800 rounded-lg p-3">
-            <div className="text-[10px] text-slate-500 uppercase">meq/L 합</div>
-            <div className="text-sm font-mono text-slate-200">
-              C {fmtNumber(derived.cationMeq, 3)} / A{' '}
-              {fmtNumber(derived.anionMeq, 3)}
-            </div>
-            {cbMode !== 'off' && (
-              <div className="text-[10px] text-slate-500 mt-1">
-                원본: C{' '}
-                <span className="font-mono">
-                  {fmtNumber(derived.rawCationMeq, 3)}
-                </span>{' '}
-                / A{' '}
-                <span className="font-mono">
-                  {fmtNumber(derived.rawAnionMeq, 3)}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Ions */}
-      <div className="pt-1">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-bold text-slate-300 flex items-center gap-2">
-            <span className="w-1 h-4 bg-blue-500 rounded-sm" />
-            이온 조성 입력(전체)
-          </h3>
-          <div className="text-[10px] text-slate-500">
-            mg/L 입력 → ppm(CaCO3)/meq/L 자동 계산
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <IonTable
-            title="CATIONS (+)"
-            defs={CATIONS}
-            chem={localChem}
-            accent="text-blue-300"
-            onChange={(k, v) => setLocalChem({ ...localChem, [k]: v })}
-            showDerived
-            compact={compact}
-          />
-          <IonTable
-            title="ANIONS (-)"
-            defs={ANIONS}
-            chem={localChem}
-            accent="text-rose-300"
-            onChange={(k, v) => setLocalChem({ ...localChem, [k]: v })}
-            showDerived
-            compact={compact}
-          />
-          <IonTable
-            title="NEUTRALS"
-            defs={NEUTRALS}
-            chem={localChem}
-            accent="text-emerald-300"
-            onChange={(k, v) => setLocalChem({ ...localChem, [k]: v })}
-            showDerived={false}
-            compact={compact}
-          />
-        </div>
-      </div>
-
-      {/* Details */}
-      <div className="pt-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-bold text-slate-300 flex items-center gap-2">
-            <span className="w-1 h-4 bg-slate-500 rounded-sm" />
-            상세 입력 (필요할 때만 펼치기)
-          </h3>
-          <button
-            onClick={() => setDetailsOpen((v) => !v)}
-            className="px-3 py-1.5 rounded text-xs font-bold text-slate-200 bg-slate-800 border border-slate-700 hover:bg-slate-700"
+          {/* Charge Balance */}
+          <Card
+            title="전하 밸런스 (WAVE Mode)"
+            className="flex-1 min-h-0 flex flex-col"
           >
-            {detailsOpen ? '접기' : '펼치기'}
-          </button>
+            <div className="flex flex-col gap-2">
+              <select
+                className="w-full h-7 bg-slate-950 border border-slate-700 rounded px-1 text-xs text-slate-200"
+                value={cbMode}
+                onChange={(e) => setCbMode(e.target.value as ChargeBalanceMode)}
+              >
+                <option value="off">OFF (원본 유지)</option>
+                <option value="anions">Anions (음이온 기준)</option>
+                <option value="cations">Cations (양이온 기준)</option>
+                <option value="all">All (전체 보정)</option>
+              </select>
+
+              <div className="flex justify-between items-center text-[10px] bg-slate-950/50 p-1.5 rounded border border-slate-800/50">
+                <span className="text-slate-500">Input Δ:</span>
+                <span
+                  className={`font-mono ${derived.rawChargeBalance_meqL === 0 ? 'text-slate-500' : 'text-amber-500'}`}
+                >
+                  {fmtNumber(derived.rawChargeBalance_meqL, 3)}
+                </span>
+                <span className="text-slate-700">|</span>
+                <span className="text-slate-500">Rslt Δ:</span>
+                <span className="font-mono text-emerald-500">
+                  {cbMode !== 'off'
+                    ? fmtNumber(derived.chargeBalance_meqL, 3)
+                    : '-'}
+                </span>
+              </div>
+
+              <button
+                onClick={applyBalanceIntoTable}
+                disabled={cbMode === 'off'}
+                className="w-full py-2 rounded text-[11px] font-bold text-emerald-500 bg-emerald-900/10 border border-emerald-900/30 hover:bg-emerald-900/20 disabled:opacity-30 disabled:cursor-not-allowed mt-auto"
+              >
+                ▶ 표(Table) 값 자동 보정
+              </button>
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* 🔵 [RIGHT COLUMN] 결과 영역 (변동 없음, 메모 제거됨) */}
+      <div className="col-span-12 xl:col-span-9 flex flex-col gap-3 h-full overflow-hidden">
+        {/* 상단 KPI */}
+        <div className="flex gap-3 h-[70px] shrink-0">
+          <div className="flex-1 bg-slate-900/60 border border-slate-800 rounded-lg p-3 flex flex-col justify-center relative overflow-hidden group">
+            <div className="text-[10px] font-bold text-slate-500 uppercase z-10">
+              TDS {cbMode !== 'off' && '(보정)'}
+            </div>
+            <div className="text-2xl font-mono text-emerald-400 font-bold z-10 flex items-baseline gap-1">
+              {fmtNumber(derived.totalTDS, 1)}{' '}
+              <span className="text-xs font-normal text-slate-600">mg/L</span>
+            </div>
+          </div>
+          <div className="flex-1 bg-slate-900/60 border border-slate-800 rounded-lg p-3 flex flex-col justify-center">
+            <div className="text-[10px] font-bold text-slate-500 uppercase">
+              Hardness
+            </div>
+            <div className="text-xl font-mono text-blue-300 font-semibold flex items-baseline gap-1">
+              {fmtNumber(derived.calcHardness, 1)}{' '}
+              <span className="text-[10px] font-normal text-slate-600">
+                as CaCO3
+              </span>
+            </div>
+          </div>
+          <div className="flex-1 bg-slate-900/60 border border-slate-800 rounded-lg p-3 flex flex-col justify-center">
+            <div className="text-[10px] font-bold text-slate-500 uppercase">
+              Alkalinity
+            </div>
+            <div className="text-xl font-mono text-blue-300 font-semibold flex items-baseline gap-1">
+              {fmtNumber(derived.calcAlkalinity, 1)}{' '}
+              <span className="text-[10px] font-normal text-slate-600">
+                as CaCO3
+              </span>
+            </div>
+          </div>
+          <div className="w-32 bg-slate-900/40 border border-slate-800 rounded-lg p-3 flex flex-col justify-center">
+            <div className="text-[10px] font-bold text-slate-500 uppercase">
+              Cond.
+            </div>
+            <div className="text-lg font-mono text-slate-300 flex items-baseline gap-1">
+              {fmtNumber(derived.estConductivity_uScm, 0)}{' '}
+              <span className="text-[10px] text-slate-600">µS</span>
+            </div>
+          </div>
         </div>
 
-        {detailsOpen && (
-          <div className="mt-3 grid grid-cols-12 gap-4">
-            <div className="col-span-12 lg:col-span-8 p-3 bg-slate-900/30 border border-slate-800 rounded-lg">
-              <div className="grid grid-cols-12 gap-3">
-                <div className="col-span-12 md:col-span-4">
-                  <Field label="최저 온도 (°C)">
-                    <Input
-                      className="h-9 text-right font-mono"
-                      value={localFeed.temp_min_C ?? ''}
-                      onChange={(e) =>
-                        setLocalFeed((prev) => ({
-                          ...prev,
-                          temp_min_C: numOrNull(e.target.value),
-                        }))
-                      }
-                    />
-                  </Field>
-                </div>
-                <div className="col-span-12 md:col-span-4">
-                  <Field label="설계 온도 (°C)">
-                    <Input
-                      className="h-9 text-right font-mono"
-                      value={localFeed.temperature_C ?? ''}
-                      onChange={(e) =>
-                        setLocalFeed((prev) => ({
-                          ...prev,
-                          temperature_C: num0(e.target.value),
-                        }))
-                      }
-                    />
-                  </Field>
-                </div>
-                <div className="col-span-12 md:col-span-4">
-                  <Field label="최고 온도 (°C)">
-                    <Input
-                      className="h-9 text-right font-mono"
-                      value={localFeed.temp_max_C ?? ''}
-                      onChange={(e) =>
-                        setLocalFeed((prev) => ({
-                          ...prev,
-                          temp_max_C: numOrNull(e.target.value),
-                        }))
-                      }
-                    />
-                  </Field>
-                </div>
-              </div>
+        {/* 하단 이온 테이블 */}
+        <div className="flex-1 bg-slate-900/20 border border-slate-800/50 rounded-lg p-1 min-h-0 overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between px-3 py-2 shrink-0">
+            <div className="text-xs font-bold text-slate-300 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+              이온 조성표 (Ion Composition)
             </div>
+            <button
+              onClick={() => setDetailsOpen(!detailsOpen)}
+              className="text-[10px] text-slate-500 hover:text-slate-300 underline"
+            >
+              {detailsOpen ? '닫기' : 'SS/SDI/TOC 추가'}
+            </button>
+          </div>
 
-            <div className="col-span-12 lg:col-span-4 p-3 bg-slate-900/30 border border-slate-800 rounded-lg">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                고형물/유기물(참고)
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="탁도 (NTU)">
-                  <Input
-                    className="h-9 text-right font-mono"
-                    value={localFeed.turbidity_ntu ?? ''}
-                    onChange={(e) =>
-                      setLocalFeed((prev) => ({
-                        ...prev,
-                        turbidity_ntu: numOrNull(e.target.value),
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="TSS (mg/L)">
-                  <Input
-                    className="h-9 text-right font-mono"
-                    value={localFeed.tss_mgL ?? ''}
-                    onChange={(e) =>
-                      setLocalFeed((prev) => ({
-                        ...prev,
-                        tss_mgL: numOrNull(e.target.value),
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="SDI15">
-                  <Input
-                    className="h-9 text-right font-mono"
-                    value={localFeed.sdi15 ?? ''}
-                    onChange={(e) =>
-                      setLocalFeed((prev) => ({
-                        ...prev,
-                        sdi15: numOrNull(e.target.value),
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="TOC (mg/L)">
-                  <Input
-                    className="h-9 text-right font-mono"
-                    value={localFeed.toc_mgL ?? ''}
-                    onChange={(e) =>
-                      setLocalFeed((prev) => ({
-                        ...prev,
-                        toc_mgL: numOrNull(e.target.value),
-                      }))
-                    }
-                  />
-                </Field>
+          <div className="flex-1 overflow-y-auto px-2 pb-2 custom-scrollbar">
+            <div className="grid grid-cols-3 gap-4 h-full">
+              <IonTable
+                title="CATIONS (+)"
+                defs={CATIONS}
+                chem={localChem}
+                accent="text-blue-300"
+                onChange={(k: any, v: any) =>
+                  setLocalChem({ ...localChem, [k]: v })
+                }
+                showDerived
+                compact={true}
+              />
+              <IonTable
+                title="ANIONS (-)"
+                defs={ANIONS}
+                chem={localChem}
+                accent="text-rose-300"
+                onChange={(k: any, v: any) =>
+                  setLocalChem({ ...localChem, [k]: v })
+                }
+                showDerived
+                compact={true}
+              />
+              <div className="flex flex-col gap-3">
+                <IonTable
+                  title="NEUTRALS"
+                  defs={NEUTRALS}
+                  chem={localChem}
+                  accent="text-emerald-300"
+                  onChange={(k: any, v: any) =>
+                    setLocalChem({ ...localChem, [k]: v })
+                  }
+                  showDerived={false}
+                  compact={true}
+                />
+
+                {/* 상세 입력 (Neutrals 아래 배치) */}
+                {detailsOpen && (
+                  <div className="bg-slate-900 border border-slate-700 p-2 rounded animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Turbidity">
+                        <Input
+                          className="h-7 text-right"
+                          value={localFeed.turbidity_ntu ?? ''}
+                          onChange={(e: any) =>
+                            setLocalFeed((p: any) => ({
+                              ...p,
+                              turbidity_ntu: numOrNull(e.target.value),
+                            }))
+                          }
+                        />
+                      </Field>
+                      <Field label="TSS">
+                        <Input
+                          className="h-7 text-right"
+                          value={localFeed.tss_mgL ?? ''}
+                          onChange={(e: any) =>
+                            setLocalFeed((p: any) => ({
+                              ...p,
+                              tss_mgL: numOrNull(e.target.value),
+                            }))
+                          }
+                        />
+                      </Field>
+                      <Field label="SDI 15">
+                        <Input
+                          className="h-7 text-right"
+                          value={localFeed.sdi15 ?? ''}
+                          onChange={(e: any) =>
+                            setLocalFeed((p: any) => ({
+                              ...p,
+                              sdi15: numOrNull(e.target.value),
+                            }))
+                          }
+                        />
+                      </Field>
+                      <Field label="TOC">
+                        <Input
+                          className="h-7 text-right"
+                          value={localFeed.toc_mgL ?? ''}
+                          onChange={(e: any) =>
+                            setLocalFeed((p: any) => ({
+                              ...p,
+                              toc_mgL: numOrNull(e.target.value),
+                            }))
+                          }
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

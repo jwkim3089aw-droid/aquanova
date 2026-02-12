@@ -1,5 +1,5 @@
 // ui/src/features/simulation/components/UnitInspectorModal.tsx
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { Node } from 'reactflow';
 
 import {
@@ -35,8 +35,6 @@ import { useBlockDeleteKeysWhenOpen } from '../hooks/useBlockDeleteKeysWhenOpen'
 import { FeedInspectorBody } from './FeedInspectorBody';
 import { useFeedChargeBalance } from '../hooks/useFeedChargeBalance';
 import { roundTo, type ChargeBalanceMode } from '../chemistry';
-
-// ✅ water_type 정석화(백엔드 enum) 유틸
 import { normalizeWaterType, type FeedWaterType } from '../model/feedWater';
 
 // ------------------------------------------------------------------
@@ -109,27 +107,15 @@ export function UnitInspectorModal(props: InspectorProps) {
   const [quick, setQuick] = useState({ nacl_mgL: 0, mgso4_mgL: 0 });
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  const [fitMode, setFitMode] = useState(true);
-  const [fitScale, setFitScale] = useState(1);
-  const [fitNeedsScroll, setFitNeedsScroll] = useState(false);
-
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const contentRef = useRef<HTMLDivElement | null>(null);
-
   const [cbMode, setCbMode] = useState<ChargeBalanceMode>('anions');
 
-  // ✅ [추가] 적용 완료 애니메이션 상태
-  const [isApplied, setIsApplied] = useState(false);
+  // ✅ [수정] isApplied 상태 제거됨
 
   useEffect(() => {
-    if (!isOpen) {
-      setIsApplied(false); // 창이 닫힐 때 상태 리셋
-      return;
-    }
+    if (!isOpen) return;
 
     const minT = feed?.temp_min_C ?? feed.temperature_C;
     const maxT = feed?.temp_max_C ?? feed.temperature_C;
-
     const wt = normalizeWaterType(feed?.water_type);
 
     setLocalFeed({
@@ -144,7 +130,7 @@ export function UnitInspectorModal(props: InspectorProps) {
 
     setLocalChem(feedChemistry ?? DEFAULT_CHEMISTRY);
     setQuick({ nacl_mgL: 0, mgso4_mgL: 0 });
-    setDetailsOpen(false);
+    setDetailsOpen(false); // 모달 열릴 때마다 상세 닫힘 상태로 시작
 
     const saved = feed?.charge_balance_mode ?? null;
     setCbMode(saved ?? 'anions');
@@ -155,77 +141,7 @@ export function UnitInspectorModal(props: InspectorProps) {
     } else {
       setLocalCfg(null);
     }
-
-    setFitScale(1);
-    setFitNeedsScroll(false);
   }, [isOpen, selEndpoint?.id, selUnit?.id, feed, feedChemistry]);
-
-  const fitActive = fitMode && !detailsOpen;
-
-  useLayoutEffect(() => {
-    if (!isOpen) return;
-
-    if (!fitActive) {
-      setFitScale(1);
-      setFitNeedsScroll(false);
-      return;
-    }
-
-    const body = bodyRef.current;
-    const content = contentRef.current;
-    if (!body || !content) return;
-
-    const minScale = 0.85;
-
-    const compute = () => {
-      const b = bodyRef.current;
-      const c = contentRef.current;
-      if (!b || !c) return;
-
-      const availH = Math.max(0, b.clientHeight - 8);
-      const availW = Math.max(0, b.clientWidth - 8);
-
-      const needH = c.scrollHeight;
-      const needW = c.scrollWidth;
-
-      if (needH <= 0 || needW <= 0 || availH <= 0 || availW <= 0) return;
-
-      const sH = availH / needH;
-      const sW = availW / needW;
-      const raw = Math.min(1, sH, sW) * 0.98;
-
-      const needsScroll = raw < minScale;
-
-      if (needsScroll) {
-        setFitNeedsScroll(true);
-        setFitScale(1);
-      } else {
-        setFitNeedsScroll(false);
-        setFitScale(raw);
-      }
-
-      requestAnimationFrame(() => {
-        const bb = bodyRef.current;
-        if (!bb) return;
-        if (!needsScroll) {
-          bb.scrollTop = 0;
-          bb.scrollLeft = 0;
-        }
-      });
-    };
-
-    compute();
-
-    const ro = new ResizeObserver(() => compute());
-    ro.observe(body);
-    ro.observe(content);
-
-    window.addEventListener('resize', compute);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener('resize', compute);
-    };
-  }, [isOpen, fitActive]);
 
   const derived = useFeedChargeBalance(localChem, cbMode);
 
@@ -233,8 +149,6 @@ export function UnitInspectorModal(props: InspectorProps) {
 
   const isFeedNode = selEndpoint?.data.role === 'feed';
   const isProductNode = selEndpoint?.data.role === 'product';
-
-  const compact = fitActive;
 
   const handleApply = () => {
     if (isFeedNode) {
@@ -263,156 +177,98 @@ export function UnitInspectorModal(props: InspectorProps) {
       updateUnitCfg(selUnit.id, localCfg, setNodes);
     }
 
-    // ✅ [변경] 적용 완료 피드백 후 지연 닫기
-    setIsApplied(true);
-    setTimeout(() => {
-      onClose();
-    }, 800);
+    // ✅ [수정] 지연 없이 즉시 닫기
+    onClose();
   };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px]"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
       onClick={onClose}
     >
+      {/* 화면 꽉 채우는 대형 모달 (최대 1600px) */}
       <div
-        className="w-[min(1420px,96vw)] max-h-[96vh] flex flex-col rounded-xl border border-slate-800 bg-slate-950 shadow-2xl ring-1 ring-white/5 overflow-hidden"
+        className="w-full max-w-[1600px] h-[92vh] max-h-[1080px] flex flex-col rounded-xl border border-slate-800 bg-slate-950 shadow-2xl ring-1 ring-white/5 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/50 shrink-0">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/50 shrink-0 h-[60px]">
+          <div className="flex items-center gap-3">
             <div
-              className={`w-2 h-2 rounded-full ${
-                selEndpoint ? 'bg-blue-500' : 'bg-emerald-500'
+              className={`w-3 h-3 rounded-full shadow-lg ${
+                selEndpoint
+                  ? 'bg-blue-500 shadow-blue-500/40'
+                  : 'bg-emerald-500 shadow-emerald-500/40'
               }`}
             />
-            <h2 className="text-sm font-bold text-slate-100 tracking-wide">
-              {isFeedNode
-                ? '원수(FEED) 수질 분석'
-                : selUnit
-                  ? `${(selUnit.data as UnitData).kind} 설정`
-                  : '설정'}
-            </h2>
+            <div>
+              <h2 className="text-base font-bold text-slate-100 tracking-wide flex items-center gap-2">
+                {isFeedNode
+                  ? '원수(FEED) 수질 분석'
+                  : selUnit
+                    ? `${(selUnit.data as UnitData).kind} 설정`
+                    : '설정'}
+              </h2>
+            </div>
             {isFeedNode && (
-              <span className="text-[11px] text-slate-500">
-                (이온 조성 → TDS/경도/알칼리도 자동 계산)
+              <span className="text-[11px] text-slate-500 ml-2 pt-1">
+                (이온 조성 입력 → TDS/경도/알칼리도 자동 계산)
               </span>
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            {isFeedNode && (
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            >
+              취소
+            </button>
+            {!isProductNode && (
+              // ✅ [수정] 애니메이션 없이 심플한 적용 버튼
               <button
-                onClick={() => setFitMode((v) => !v)}
-                className={`px-3 py-1 rounded text-xs font-bold border transition-colors ${
-                  fitMode
-                    ? 'text-emerald-200 bg-emerald-900/20 border-emerald-900/40 hover:bg-emerald-900/30'
-                    : 'text-slate-200 bg-slate-800 border-slate-700 hover:bg-slate-700'
-                }`}
-                title="상세 닫힘 상태에서 화면에 맞게 자동 축소/확대합니다."
+                onClick={handleApply}
+                className="px-6 py-2 rounded text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/20 active:scale-95 transition-all"
               >
-                화면 맞춤 {fitMode ? 'ON' : 'OFF'}
+                적용
               </button>
             )}
-
-            {isProductNode ? (
+            {isProductNode && (
               <button
                 onClick={onClose}
-                className="px-3 py-1 rounded text-xs font-medium text-slate-300 bg-slate-800 border border-slate-700 hover:bg-slate-700"
+                className="px-4 py-2 rounded text-xs font-medium text-slate-300 bg-slate-800 border border-slate-700 hover:bg-slate-700"
               >
                 닫기
               </button>
-            ) : (
-              <>
-                <button
-                  onClick={onClose}
-                  className="px-3 py-1 rounded text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors"
-                >
-                  취소
-                </button>
-                {/* ✅ [변경] 적용 버튼에 애니메이션과 상태 적용 */}
-                <button
-                  onClick={handleApply}
-                  disabled={isApplied}
-                  className={`px-4 py-1 rounded text-xs font-bold text-white transition-all duration-300 active:scale-95 flex items-center gap-1.5 ${
-                    isApplied
-                      ? 'bg-emerald-600 shadow-lg shadow-emerald-900/40'
-                      : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/20'
-                  }`}
-                >
-                  {isApplied ? (
-                    <>
-                      <svg
-                        className="w-3.5 h-3.5"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={3}
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                      적용 완료!
-                    </>
-                  ) : (
-                    '적용'
-                  )}
-                </button>
-              </>
             )}
           </div>
         </div>
 
-        {/* Body */}
-        <div
-          ref={bodyRef}
-          className={`flex-1 ${
-            fitActive
-              ? fitNeedsScroll
-                ? 'overflow-auto'
-                : 'overflow-hidden'
-              : 'overflow-y-auto'
-          } ${compact ? 'p-3' : 'p-4'} scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent`}
-        >
-          <div
-            ref={contentRef}
-            className={fitActive ? 'mx-auto w-full max-w-full' : 'w-full'}
-            style={
-              fitActive && !fitNeedsScroll
-                ? {
-                    transform: `scale(${fitScale})`,
-                    transformOrigin: 'top center',
-                    width: '100%',
-                    maxWidth: '100%',
-                  }
-                : undefined
-            }
-          >
-            {isFeedNode ? (
-              <FeedInspectorBody
-                localFeed={localFeed}
-                setLocalFeed={setLocalFeed}
-                localChem={localChem}
-                setLocalChem={setLocalChem}
-                quick={quick}
-                setQuick={setQuick}
-                detailsOpen={detailsOpen}
-                setDetailsOpen={setDetailsOpen}
-                cbMode={cbMode}
-                setCbMode={setCbMode}
-                unitMode={unitMode}
-                compact={compact}
-                derived={derived}
-              />
-            ) : selUnit && localCfg ? (
-              (() => {
+        {/* Body: 스크롤 없이 꽉 채우는 구조 */}
+        <div className="flex-1 overflow-hidden bg-slate-950 p-4">
+          {isFeedNode ? (
+            <FeedInspectorBody
+              localFeed={localFeed}
+              setLocalFeed={setLocalFeed}
+              localChem={localChem}
+              setLocalChem={setLocalChem}
+              quick={quick}
+              setQuick={setQuick}
+              detailsOpen={detailsOpen}
+              setDetailsOpen={setDetailsOpen}
+              cbMode={cbMode}
+              setCbMode={setCbMode}
+              unitMode={unitMode}
+              compact={false}
+              derived={derived}
+            />
+          ) : selUnit && localCfg ? (
+            // 유닛 설정창은 내용이 길 수 있으므로 내부 스크롤 허용
+            <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
+              {/* Unit Editor Component Rendering */}
+              {(() => {
                 const u = selUnit.data as UnitData;
                 const kind = u.kind as UnitKind;
-
                 const updateCfg = (newCfg: UnitData['cfg']) =>
                   setLocalCfg(newCfg);
 
@@ -420,68 +276,55 @@ export function UnitInspectorModal(props: InspectorProps) {
                   return (
                     <HRROEditor
                       node={{ ...u, cfg: localCfg as HRROConfig } as any}
-                      onChange={updateCfg as unknown as (c: HRROConfig) => void}
+                      onChange={updateCfg as any}
                     />
                   );
-
                 if (kind === 'RO')
                   return (
                     <ROEditor
                       node={{ ...u, cfg: localCfg as ROConfig } as any}
-                      onChange={updateCfg as unknown as (c: ROConfig) => void}
+                      onChange={updateCfg as any}
                     />
                   );
-
                 if (kind === 'UF')
                   return (
                     <UFEditor
                       node={{ ...u, cfg: localCfg as UFConfig } as any}
-                      onChange={updateCfg as unknown as (c: UFConfig) => void}
+                      onChange={updateCfg as any}
                     />
                   );
-
                 if (kind === 'NF')
                   return (
                     <NFEditor
                       node={{ ...u, cfg: localCfg as NFConfig } as any}
-                      onChange={updateCfg as unknown as (c: NFConfig) => void}
+                      onChange={updateCfg as any}
                     />
                   );
-
                 if (kind === 'MF')
                   return (
                     <MFEditor
                       node={{ ...u, cfg: localCfg as MFConfig } as any}
-                      onChange={updateCfg as unknown as (c: MFConfig) => void}
+                      onChange={updateCfg as any}
                     />
                   );
-
                 if (kind === 'PUMP')
                   return (
                     <PumpEditor
                       node={{ ...u, cfg: localCfg as PumpConfig } as any}
-                      onChange={updateCfg as unknown as (c: PumpConfig) => void}
+                      onChange={updateCfg as any}
                     />
                   );
 
                 return (
-                  <div className="text-sm text-red-300">
-                    Unknown Unit Type: {kind}
-                  </div>
+                  <div className="text-sm text-red-300">Unknown Unit Type</div>
                 );
-              })()
-            ) : isProductNode ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-60">
-                <div className="text-4xl mb-2">🏁</div>
-                <p className="text-sm font-medium">최종 생산수</p>
-                <p className="text-xs">시뮬레이션 결과에서 확인</p>
-              </div>
-            ) : (
-              <div className="text-sm text-slate-400">
-                선택된 노드가 없습니다.
-              </div>
-            )}
-          </div>
+              })()}
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center text-slate-500">
+              정보가 없습니다.
+            </div>
+          )}
         </div>
       </div>
     </div>
