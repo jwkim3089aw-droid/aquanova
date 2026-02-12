@@ -1,10 +1,7 @@
-// ui\src\features\simulation\editors\UnitForms.tsx
+// ui/src/features/simulation/editors/UnitForms.tsx
 
 import React from 'react';
-// ✅ [경로 수정] components가 같은 레벨에 있음
 import { Field, Input } from '../components/Common';
-
-// ✅ [경로 수정] MembraneSelect도 components 폴더로 이동했으므로 상대 경로 사용
 import MembraneSelect from '../components/MembraneSelect';
 
 import {
@@ -18,7 +15,7 @@ import {
 } from '../model/types';
 
 // ==============================
-// Helper Styles
+// 1. Helper Styles & Logic
 // ==============================
 const GROUP_CLS =
   'p-2.5 border border-slate-800 rounded bg-slate-950/30 mb-2.5';
@@ -27,8 +24,27 @@ const HEADER_CLS =
 const INPUT_CLS =
   'h-7 text-sm bg-slate-900 border-slate-700 focus:border-blue-500 focus:bg-slate-800 transition-colors w-full rounded px-2 outline-none text-slate-200';
 
+/**
+ * ✅ MembraneSelect의 일반적인 출력({ area, A... })을
+ * 실제 Config의 커스텀 필드({ custom_area_m2, ... })로 매핑하는 헬퍼
+ */
+const mapMembraneChange = (updates: any) => {
+  const patch: any = {};
+
+  if (updates.mode !== undefined) patch.membrane_mode = updates.mode;
+  if (updates.model !== undefined) patch.membrane_model = updates.model;
+
+  // 커스텀 입력값 매핑
+  if (updates.area !== undefined) patch.custom_area_m2 = updates.area;
+  if (updates.A !== undefined) patch.custom_A_lmh_bar = updates.A;
+  if (updates.B !== undefined) patch.custom_B_lmh = updates.B;
+  if (updates.rej !== undefined) patch.custom_salt_rejection_pct = updates.rej;
+
+  return patch;
+};
+
 // ==============================
-// 공통 펌프 설정 컴포넌트
+// 2. 공통 펌프 설정 섹션
 // ==============================
 function PumpSection({
   cfg,
@@ -87,324 +103,8 @@ function PumpSection({
 }
 
 // ==============================
-// 1. RO Editor
+// 3. HRRO Editor (Dashboard Style)
 // ==============================
-export function ROEditor({
-  node,
-  onChange,
-}: {
-  node: UnitData | undefined;
-  onChange: (cfg: ROConfig) => void;
-}) {
-  const data = node;
-  if (!data || data.kind !== 'RO')
-    return <div className="text-red-400 text-xs">Invalid Data</div>;
-
-  const raw = (data.cfg as ROConfig | undefined) ?? {};
-  const cfg: ROConfig = {
-    elements: 6,
-    mode: 'pressure',
-    pressure_bar: 16,
-    recovery_target_pct: 75,
-    ro_n_stages: 1,
-    ro_flow_factor: 0.85,
-    ro_temp_C: 25,
-    ro_pass_permeate_back_pressure_bar: 0,
-    ro_stage_pre_delta_p_bar: 0.31,
-    ...raw,
-  };
-  const patch = (p: Partial<ROConfig>) => onChange({ ...cfg, ...p });
-
-  return (
-    <div
-      className="space-y-2 text-slate-100 text-xs"
-      onKeyDown={(e) => e.stopPropagation()}
-    >
-      <PumpSection cfg={cfg} onChange={patch} defaultPressure={15.0} />
-
-      {/* ✅ MembraneSelect 컴포넌트 */}
-      <div className="mb-2">
-        <MembraneSelect
-          unitType="RO"
-          mode={cfg.membrane_mode}
-          model={cfg.membrane_model}
-          area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
-          A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
-          B={cfg.custom_B_lmh ?? cfg.membrane_B_lmh}
-          rej={cfg.custom_salt_rejection_pct ?? cfg.membrane_salt_rejection_pct}
-          onChange={patch}
-        />
-      </div>
-
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>Pass Configuration</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="# Stages">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.ro_n_stages ?? 1}
-              onChange={(e) => patch({ ro_n_stages: Number(e.target.value) })}
-            />
-          </Field>
-          <Field label="Flow Factor">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.ro_flow_factor ?? 0.85}
-              onChange={(e) =>
-                patch({ ro_flow_factor: Number(e.target.value) })
-              }
-            />
-          </Field>
-          <Field label="Temp (°C)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.ro_temp_C ?? 25}
-              onChange={(e) => patch({ ro_temp_C: Number(e.target.value) })}
-            />
-          </Field>
-          <Field label="Back Press (bar)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.ro_pass_permeate_back_pressure_bar ?? 0}
-              onChange={(e) =>
-                patch({
-                  ro_pass_permeate_back_pressure_bar: Number(e.target.value),
-                })
-              }
-            />
-          </Field>
-        </div>
-      </div>
-
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>Control Strategy</h4>
-        <div className="mb-2 flex gap-4 bg-slate-900 p-1.5 rounded border border-slate-800">
-          <label className="flex items-center gap-1.5 cursor-pointer text-xs">
-            <input
-              type="radio"
-              className="bg-slate-800 border-slate-600 text-blue-500"
-              checked={cfg.mode === 'pressure'}
-              onChange={() => patch({ mode: 'pressure' })}
-            />{' '}
-            Fix Pressure
-          </label>
-          <label className="flex items-center gap-1.5 cursor-pointer text-xs">
-            <input
-              type="radio"
-              className="bg-slate-800 border-slate-600 text-blue-500"
-              checked={cfg.mode === 'recovery'}
-              onChange={() => patch({ mode: 'recovery' })}
-            />{' '}
-            Fix Recovery
-          </label>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {cfg.mode === 'pressure' ? (
-            <Field label="Feed Press (bar)">
-              <Input
-                className={INPUT_CLS}
-                value={cfg.pressure_bar ?? 16}
-                onChange={(e) =>
-                  patch({ pressure_bar: Number(e.target.value) })
-                }
-              />
-            </Field>
-          ) : (
-            <Field label="Recovery (%)">
-              <Input
-                className={INPUT_CLS}
-                value={cfg.recovery_target_pct ?? 75}
-                onChange={(e) =>
-                  patch({ recovery_target_pct: Number(e.target.value) })
-                }
-              />
-            </Field>
-          )}
-        </div>
-      </div>
-
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>Stage Layout</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="PV / Stage">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.ro_stage_pv_per_stage}
-              onChange={(e) =>
-                patch({
-                  ro_stage_pv_per_stage: Number(e.target.value),
-                  elements:
-                    Number(e.target.value) * (cfg.ro_stage_els_per_pv || 6),
-                })
-              }
-            />
-          </Field>
-          <Field label="Elements / PV">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.ro_stage_els_per_pv}
-              onChange={(e) =>
-                patch({
-                  ro_stage_els_per_pv: Number(e.target.value),
-                  elements:
-                    (cfg.ro_stage_pv_per_stage || 1) * Number(e.target.value),
-                })
-              }
-            />
-          </Field>
-          <Field label="Total Elements">
-            <Input
-              className={`${INPUT_CLS} bg-slate-800/50 text-slate-400`}
-              value={cfg.elements}
-              readOnly
-            />
-          </Field>
-          <Field label="Boost Press (bar)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.ro_stage_boost_press_bar ?? 0}
-              onChange={(e) =>
-                patch({ ro_stage_boost_press_bar: Number(e.target.value) })
-              }
-            />
-          </Field>
-          <Field label="Back Press (bar)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.ro_stage_back_pressure_bar ?? 0}
-              onChange={(e) =>
-                patch({ ro_stage_back_pressure_bar: Number(e.target.value) })
-              }
-            />
-          </Field>
-          <Field label="Pre-stage ΔP">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.ro_stage_pre_delta_p_bar ?? 0.31}
-              onChange={(e) =>
-                patch({ ro_stage_pre_delta_p_bar: Number(e.target.value) })
-              }
-            />
-          </Field>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ==============================
-// 2. UF Editor
-// ==============================
-export function UFEditor({
-  node,
-  onChange,
-}: {
-  node: UnitData | undefined;
-  onChange: (cfg: UFConfig) => void;
-}) {
-  const data = node;
-  if (!data || data.kind !== 'UF')
-    return <div className="text-red-400 text-xs">Invalid Data</div>;
-
-  const raw = (data.cfg as UFConfig | undefined) ?? {};
-  const cfg: UFConfig = {
-    elements: 6,
-    filtration_duration_min: 30,
-    uf_backwash_duration_s: 60,
-    filtrate_flux_lmh_25C: 50,
-    backwash_flux_lmh: 80,
-    ...raw,
-  };
-  const patch = (p: Partial<UFConfig>) => onChange({ ...cfg, ...p });
-
-  return (
-    <div
-      className="space-y-2 text-slate-100 text-xs"
-      onKeyDown={(e) => e.stopPropagation()}
-    >
-      <PumpSection cfg={cfg} onChange={patch} defaultPressure={3.0} />
-
-      {/* ✅ MembraneSelect 컴포넌트 */}
-      <div className="mb-2">
-        <MembraneSelect
-          unitType="UF"
-          mode={cfg.membrane_mode}
-          model={cfg.membrane_model}
-          area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
-          A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
-          // UF는 B, Rej 없음
-          onChange={patch}
-        />
-      </div>
-
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>Module Configuration</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="# Modules">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.elements}
-              onChange={(e) => patch({ elements: Number(e.target.value) })}
-            />
-          </Field>
-        </div>
-      </div>
-
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>Operation Cycle</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Filtration (min)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.filtration_duration_min}
-              onChange={(e) =>
-                patch({ filtration_duration_min: Number(e.target.value) })
-              }
-            />
-          </Field>
-          <Field label="Backwash (sec)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.uf_backwash_duration_s}
-              onChange={(e) =>
-                patch({ uf_backwash_duration_s: Number(e.target.value) })
-              }
-            />
-          </Field>
-        </div>
-      </div>
-
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>Flux Design</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Op Flux (lmh)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.filtrate_flux_lmh_25C}
-              onChange={(e) =>
-                patch({ filtrate_flux_lmh_25C: Number(e.target.value) })
-              }
-            />
-          </Field>
-          <Field label="BW Flux (lmh)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.backwash_flux_lmh}
-              onChange={(e) =>
-                patch({ backwash_flux_lmh: Number(e.target.value) })
-              }
-            />
-          </Field>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ==============================
-// 3. HRRO Editor (Updated for WAVE Parity)
-// ==============================================
-
 export function HRROEditor({
   node,
   onChange,
@@ -412,13 +112,10 @@ export function HRROEditor({
   node: UnitData | undefined;
   onChange: (cfg: HRROConfig) => void;
 }) {
-  const data = node;
-  if (!data || data.kind !== 'HRRO')
-    return <div className="text-red-400 text-xs">Invalid Data</div>;
+  if (!node || node.kind !== 'HRRO')
+    return <div className="text-red-400 p-4">Invalid Data</div>;
 
-  const raw = (data.cfg as HRROConfig | undefined) ?? {};
-
-  // [보완] WAVE 기본값에 맞춰 초기값 설정
+  const raw = (node.cfg as HRROConfig | undefined) ?? {};
   const cfg: HRROConfig = {
     elements: 6,
     p_set_bar: 28,
@@ -428,206 +125,210 @@ export function HRROEditor({
     makeup_tds_mgL: 35000,
     timestep_s: 5,
     max_minutes: 30,
-    stop_permeate_tds_mgL: null,
-    stop_recovery_pct: 90, // WAVE 목표 회수율 반영
-
-    // [신규 추가 필드 기본값]
-    pf_feed_ratio_pct: 120, // WAVE Default
-    pf_recovery_pct: 20, // WAVE Default
-    hrro_flow_factor: 0.85, // 오염 계수
-    hrro_stage_pre_delta_p_bar: 0.31, // 배관 손실
-
+    stop_recovery_pct: 90,
+    pf_feed_ratio_pct: 120,
+    pf_recovery_pct: 20,
+    hrro_flow_factor: 0.85,
+    hrro_stage_pre_delta_p_bar: 0.31,
     ...raw,
   };
 
   const patch = (p: Partial<HRROConfig>) => onChange({ ...cfg, ...p });
 
+  // 면적 계산 시 사용자 정의(custom) 값을 우선 참조
+  const currentArea = cfg.custom_area_m2 ?? cfg.membrane_area_m2 ?? 40.9;
+  const totalArea = currentArea * (cfg.elements || 6);
+
   return (
     <div
-      className="space-y-2 text-slate-100 text-xs"
+      className="flex flex-col h-full space-y-2 text-slate-100 text-[11px] p-1 overflow-hidden"
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <PumpSection cfg={cfg} onChange={patch} defaultPressure={20.0} />
-
-      {/* ✅ MembraneSelect 컴포넌트 */}
-      <div className="mb-2">
-        <MembraneSelect
-          unitType="HRRO"
-          model={cfg.membrane_model ?? 'filmtec-soar-7000i'}
-          area={cfg.membrane_area_m2}
-          A={cfg.membrane_A_lmh_bar}
-          B={cfg.membrane_B_lmh}
-          rej={cfg.membrane_salt_rejection_pct}
-          onChange={patch}
-        />
-      </div>
-
-      {/* [신규] Plug Flow (PF) 설정 - WAVE 하이브리드 모드 지원 */}
-      <div className={`${GROUP_CLS} border-blue-900/30 bg-blue-950/10`}>
-        <h4 className={`${HEADER_CLS} text-blue-400`}>
-          Plug Flow (PF) Settings
-        </h4>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="PF Feed Ratio (%)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.pf_feed_ratio_pct ?? 120}
-              onChange={(e) =>
-                patch({ pf_feed_ratio_pct: Number(e.target.value) })
-              }
-            />
-          </Field>
-          <Field label="PF Recovery (%)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.pf_recovery_pct ?? 20}
-              onChange={(e) =>
-                patch({ pf_recovery_pct: Number(e.target.value) })
-              }
-            />
-          </Field>
+      {/* 📊 상단 대시보드 */}
+      <div className="grid grid-cols-4 gap-2 p-1.5 bg-blue-600/10 border border-blue-500/30 rounded shadow-inner">
+        <div className="flex flex-col items-center border-r border-blue-500/20">
+          <span className="text-[9px] text-blue-400 font-bold uppercase">
+            총 여과 면적
+          </span>
+          <span className="font-mono text-sm">
+            {totalArea.toFixed(1)} <small className="text-[10px]">m²</small>
+          </span>
         </div>
-        <div className="mt-2 text-[9px] text-slate-500 leading-tight">
-          * Configure the initial single-pass stage before the closed loop
-          (Hybrid CCRO).
+        <div className="flex flex-col items-center border-r border-blue-500/20">
+          <span className="text-[9px] text-emerald-400 font-bold uppercase">
+            목표 회수율
+          </span>
+          <span className="font-mono text-sm text-emerald-400">
+            {cfg.stop_recovery_pct}%
+          </span>
+        </div>
+        <div className="flex flex-col items-center border-r border-blue-500/20">
+          <span className="text-[9px] text-amber-400 font-bold uppercase">
+            운전 설정 압력
+          </span>
+          <span className="font-mono text-sm">
+            {cfg.p_set_bar} <small className="text-[10px]">bar</small>
+          </span>
+        </div>
+        <div className="flex flex-col items-center">
+          <span className="text-[9px] text-slate-400 font-bold uppercase">
+            하이브리드 모드
+          </span>
+          <span
+            className={`font-mono text-sm ${cfg.pf_recovery_pct > 0 ? 'text-blue-400' : 'text-slate-600'}`}
+          >
+            {cfg.pf_recovery_pct > 0 ? '활성' : '비활성'}
+          </span>
         </div>
       </div>
 
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>Closed Circuit Settings</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Set Press. (bar)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.p_set_bar}
-              onChange={(e) => patch({ p_set_bar: Number(e.target.value) })}
-            />
-          </Field>
-          <Field label="Recirc (m3/h)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.recirc_flow_m3h}
-              onChange={(e) =>
-                patch({ recirc_flow_m3h: Number(e.target.value) })
-              }
-            />
-          </Field>
-          <Field label="Loop Vol (m3)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.loop_volume_m3}
-              onChange={(e) =>
-                patch({ loop_volume_m3: Number(e.target.value) })
-              }
-            />
-          </Field>
-          <Field label="Bleed (m3/h)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.bleed_m3h}
-              onChange={(e) => patch({ bleed_m3h: Number(e.target.value) })}
-            />
-          </Field>
+      <div className="grid grid-cols-3 gap-2 flex-1 overflow-hidden">
+        {/* 1열: 하드웨어 & 멤브레인 */}
+        <div className="space-y-2 overflow-y-auto pr-1 scrollbar-thin">
+          <PumpSection cfg={cfg} onChange={patch} defaultPressure={20.0} />
+          <MembraneSelect
+            unitType="HRRO"
+            mode={cfg.membrane_mode}
+            model={cfg.membrane_model}
+            area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
+            A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
+            B={cfg.custom_B_lmh ?? cfg.membrane_B_lmh}
+            rej={
+              cfg.custom_salt_rejection_pct ?? cfg.membrane_salt_rejection_pct
+            }
+            onChange={(updates) => patch(mapMembraneChange(updates))}
+          />
         </div>
-      </div>
 
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>Batch Control</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Max Time (min)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.max_minutes}
-              onChange={(e) => patch({ max_minutes: Number(e.target.value) })}
-            />
-          </Field>
-          <Field label="Stop Recov (%)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.stop_recovery_pct ?? ''}
-              onChange={(e) =>
-                patch({ stop_recovery_pct: Number(e.target.value) })
-              }
-            />
-          </Field>
+        {/* 2열: 공정 제어 */}
+        <div className="space-y-2 overflow-y-auto pr-1 scrollbar-thin">
+          <div className="p-2 border border-blue-900/40 bg-blue-950/10 rounded">
+            <h4 className="text-blue-400 font-bold mb-2 uppercase text-[10px]">
+              🌊 플러그 플로우
+            </h4>
+            <div className="grid grid-cols-1 gap-2">
+              <Field label="공급 유량비 (%)">
+                <Input
+                  className={INPUT_CLS}
+                  value={cfg.pf_feed_ratio_pct}
+                  onChange={(e) =>
+                    patch({ pf_feed_ratio_pct: Number(e.target.value) })
+                  }
+                />
+              </Field>
+              <Field label="전단 회수율 (%)">
+                <Input
+                  className={INPUT_CLS}
+                  value={cfg.pf_recovery_pct}
+                  onChange={(e) =>
+                    patch({ pf_recovery_pct: Number(e.target.value) })
+                  }
+                />
+              </Field>
+            </div>
+          </div>
+          <div className="p-2 border border-slate-800 bg-slate-900/20 rounded">
+            <h4 className="text-slate-400 font-bold mb-2 uppercase text-[10px]">
+              ⏱️ 배치 운전 제어
+            </h4>
+            <Field label="종료 회수율 (%)">
+              <Input
+                className={`${INPUT_CLS} text-emerald-400`}
+                value={cfg.stop_recovery_pct}
+                onChange={(e) =>
+                  patch({ stop_recovery_pct: Number(e.target.value) })
+                }
+              />
+            </Field>
+            <Field label="최대 운전 시간 (min)">
+              <Input
+                className={INPUT_CLS}
+                value={cfg.max_minutes}
+                onChange={(e) => patch({ max_minutes: Number(e.target.value) })}
+              />
+            </Field>
+          </div>
         </div>
-      </div>
 
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>Stage Layout</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="PV / Stage">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.hrro_stage_pv_per_stage}
-              onChange={(e) =>
-                patch({
-                  hrro_stage_pv_per_stage: Number(e.target.value),
-                  elements:
-                    Number(e.target.value) * (cfg.hrro_stage_els_per_pv || 6),
-                })
-              }
-            />
-          </Field>
-          <Field label="Elements / PV">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.hrro_stage_els_per_pv}
-              onChange={(e) =>
-                patch({
-                  hrro_stage_els_per_pv: Number(e.target.value),
-                  elements:
-                    (cfg.hrro_stage_pv_per_stage || 1) * Number(e.target.value),
-                })
-              }
-            />
-          </Field>
-          <Field label="Total Elements">
-            <Input
-              className={`${INPUT_CLS} bg-slate-800/50 text-slate-400`}
-              value={cfg.elements}
-              readOnly
-            />
-          </Field>
-
-          {/* [신규] Flow Factor & Delta P 추가 */}
-          <Field label="Flow Factor">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.hrro_flow_factor ?? 0.85}
-              onChange={(e) =>
-                patch({ hrro_flow_factor: Number(e.target.value) })
-              }
-            />
-          </Field>
-          <Field label="Pre-stage ΔP">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.hrro_stage_pre_delta_p_bar ?? 0.31}
-              onChange={(e) =>
-                patch({ hrro_stage_pre_delta_p_bar: Number(e.target.value) })
-              }
-            />
-          </Field>
-
-          <Field label="Boost Press">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.hrro_stage_boost_press_bar ?? 0}
-              onChange={(e) =>
-                patch({ hrro_stage_boost_press_bar: Number(e.target.value) })
-              }
-            />
-          </Field>
-          <Field label="Back Press">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.hrro_stage_back_pressure_bar ?? 0}
-              onChange={(e) =>
-                patch({ hrro_stage_back_pressure_bar: Number(e.target.value) })
-              }
-            />
-          </Field>
+        {/* 3열: 수리 설계 */}
+        <div className="space-y-2 overflow-y-auto pr-1 scrollbar-thin">
+          <div className="p-2 border border-slate-800 bg-slate-900/20 rounded">
+            <h4 className="text-slate-400 font-bold mb-2 uppercase text-[10px]">
+              ⚙️ 수리 설계
+            </h4>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="압력(bar)">
+                <Input
+                  className={INPUT_CLS}
+                  value={cfg.p_set_bar}
+                  onChange={(e) => patch({ p_set_bar: Number(e.target.value) })}
+                />
+              </Field>
+              <Field label="순환(m³/h)">
+                <Input
+                  className={INPUT_CLS}
+                  value={cfg.recirc_flow_m3h}
+                  onChange={(e) =>
+                    patch({ recirc_flow_m3h: Number(e.target.value) })
+                  }
+                />
+              </Field>
+              <Field label="루프(m³)">
+                <Input
+                  className={INPUT_CLS}
+                  value={cfg.loop_volume_m3}
+                  onChange={(e) =>
+                    patch({ loop_volume_m3: Number(e.target.value) })
+                  }
+                />
+              </Field>
+              <Field label="배출(m³/h)">
+                <Input
+                  className={INPUT_CLS}
+                  value={cfg.bleed_m3h}
+                  onChange={(e) => patch({ bleed_m3h: Number(e.target.value) })}
+                />
+              </Field>
+            </div>
+            <div className="mt-3 pt-2 border-t border-slate-800 grid grid-cols-2 gap-2">
+              <Field label="PV/Stage">
+                <Input
+                  className={INPUT_CLS}
+                  value={cfg.hrro_stage_pv_per_stage}
+                  onChange={(e) =>
+                    patch({
+                      hrro_stage_pv_per_stage: Number(e.target.value),
+                      elements:
+                        Number(e.target.value) *
+                        (cfg.hrro_stage_els_per_pv || 6),
+                    })
+                  }
+                />
+              </Field>
+              <Field label="Els/PV">
+                <Input
+                  className={INPUT_CLS}
+                  value={cfg.hrro_stage_els_per_pv}
+                  onChange={(e) =>
+                    patch({
+                      hrro_stage_els_per_pv: Number(e.target.value),
+                      elements:
+                        (cfg.hrro_stage_pv_per_stage || 1) *
+                        Number(e.target.value),
+                    })
+                  }
+                />
+              </Field>
+            </div>
+            <div className="mt-2 p-1.5 bg-slate-950 rounded border border-slate-800 flex justify-between items-center">
+              <span className="text-[9px] text-slate-500 font-bold uppercase">
+                Total Elements
+              </span>
+              <span className="text-blue-400 font-mono font-bold">
+                {cfg.elements} EA
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -635,121 +336,134 @@ export function HRROEditor({
 }
 
 // ==============================
-// 4. NF Editor
+// 4. RO Editor
 // ==============================
-export function NFEditor({
+export function ROEditor({
   node,
   onChange,
 }: {
   node: UnitData | undefined;
-  onChange: (cfg: NFConfig) => void;
+  onChange: (cfg: ROConfig) => void;
 }) {
-  const data = node;
-  if (!data || data.kind !== 'NF')
+  if (!node || node.kind !== 'RO')
     return <div className="text-red-400 text-xs">Invalid Data</div>;
-  const raw = (data.cfg as NFConfig | undefined) ?? {};
-  const cfg = { ...raw } as NFConfig;
-  const patch = (p: Partial<NFConfig>) => onChange({ ...cfg, ...p });
+  const cfg = {
+    elements: 6,
+    mode: 'pressure' as const,
+    pressure_bar: 16,
+    recovery_target_pct: 75,
+    ro_n_stages: 1,
+    ro_flow_factor: 0.85,
+    ...node.cfg,
+  } as ROConfig;
+  const patch = (p: Partial<ROConfig>) => onChange({ ...cfg, ...p });
 
   return (
     <div
       className="space-y-2 text-slate-100 text-xs"
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <PumpSection cfg={cfg} onChange={patch} defaultPressure={10.0} />
-
-      {/* ✅ MembraneSelect 컴포넌트 */}
-      <div className="mb-2">
-        <MembraneSelect
-          unitType="NF"
-          mode={cfg.membrane_mode}
-          model={cfg.membrane_model}
-          area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
-          A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
-          B={cfg.custom_B_lmh ?? cfg.membrane_B_lmh}
-          rej={cfg.custom_salt_rejection_pct ?? cfg.membrane_salt_rejection_pct}
-          onChange={patch}
-        />
-      </div>
-
+      <PumpSection cfg={cfg} onChange={patch} defaultPressure={15.0} />
+      <MembraneSelect
+        unitType="RO"
+        mode={cfg.membrane_mode}
+        model={cfg.membrane_model}
+        area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
+        A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
+        B={cfg.custom_B_lmh ?? cfg.membrane_B_lmh}
+        rej={cfg.custom_salt_rejection_pct ?? cfg.membrane_salt_rejection_pct}
+        onChange={(updates) => patch(mapMembraneChange(updates))}
+      />
       <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>Control</h4>
+        <h4 className={HEADER_CLS}>Control Strategy</h4>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Recovery (%)">
-            <Input
+          <Field label="Control Mode">
+            <select
               className={INPUT_CLS}
-              value={cfg.recovery_target_pct ?? 75}
-              onChange={(e) =>
-                patch({ recovery_target_pct: Number(e.target.value) })
-              }
-            />
+              value={cfg.mode}
+              onChange={(e) => patch({ mode: e.target.value as any })}
+            >
+              <option value="pressure">Fix Pressure</option>
+              <option value="recovery">Fix Recovery</option>
+            </select>
           </Field>
-          <Field label="Elements">
+          {cfg.mode === 'pressure' ? (
+            <Field label="Feed Press (bar)">
+              <Input
+                className={INPUT_CLS}
+                value={cfg.pressure_bar}
+                onChange={(e) =>
+                  patch({ pressure_bar: Number(e.target.value) })
+                }
+              />
+            </Field>
+          ) : (
+            <Field label="Recovery (%)">
+              <Input
+                className={INPUT_CLS}
+                value={cfg.recovery_target_pct}
+                onChange={(e) =>
+                  patch({ recovery_target_pct: Number(e.target.value) })
+                }
+              />
+            </Field>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==============================
+// 5. UF Editor
+// ==============================
+export function UFEditor({
+  node,
+  onChange,
+}: {
+  node: UnitData | undefined;
+  onChange: (cfg: UFConfig) => void;
+}) {
+  if (!node || node.kind !== 'UF')
+    return <div className="text-red-400 text-xs">Invalid Data</div>;
+  const cfg = {
+    elements: 6,
+    filtration_duration_min: 30,
+    uf_backwash_duration_s: 60,
+    ...node.cfg,
+  } as UFConfig;
+  const patch = (p: Partial<UFConfig>) => onChange({ ...cfg, ...p });
+
+  return (
+    <div
+      className="space-y-2 text-slate-100 text-xs"
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <PumpSection cfg={cfg} onChange={patch} defaultPressure={3.0} />
+      <MembraneSelect
+        unitType="UF"
+        mode={cfg.membrane_mode}
+        model={cfg.membrane_model}
+        area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
+        A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
+        onChange={(updates) => patch(mapMembraneChange(updates))}
+      />
+      <div className={GROUP_CLS}>
+        <h4 className={HEADER_CLS}>Operation</h4>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="# Modules">
             <Input
               className={INPUT_CLS}
               value={cfg.elements}
               onChange={(e) => patch({ elements: Number(e.target.value) })}
             />
           </Field>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ==============================
-// 5. MF Editor
-// ==============================
-export function MFEditor({
-  node,
-  onChange,
-}: {
-  node: UnitData | undefined;
-  onChange: (cfg: MFConfig) => void;
-}) {
-  const data = node;
-  if (!data || data.kind !== 'MF')
-    return <div className="text-red-400 text-xs">Invalid Data</div>;
-  const raw = (data.cfg as MFConfig | undefined) ?? {};
-  const cfg = { ...raw } as MFConfig;
-  const patch = (p: Partial<MFConfig>) => onChange({ ...cfg, ...p });
-
-  return (
-    <div
-      className="space-y-2 text-slate-100 text-xs"
-      onKeyDown={(e) => e.stopPropagation()}
-    >
-      <PumpSection cfg={cfg} onChange={patch} defaultPressure={1.0} />
-
-      {/* ✅ MembraneSelect 컴포넌트 */}
-      <div className="mb-2">
-        <MembraneSelect
-          unitType="MF"
-          mode={cfg.membrane_mode}
-          model={cfg.membrane_model}
-          area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
-          A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
-          // MF는 B, Rej 없음
-          onChange={patch}
-        />
-      </div>
-
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>Settings</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Elements">
+          <Field label="Filtration (min)">
             <Input
               className={INPUT_CLS}
-              value={cfg.elements}
-              onChange={(e) => patch({ elements: Number(e.target.value) })}
-            />
-          </Field>
-          <Field label="Flux (lmh)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.mf_filtrate_flux_lmh_25C ?? 100}
+              value={cfg.filtration_duration_min}
               onChange={(e) =>
-                patch({ mf_filtrate_flux_lmh_25C: Number(e.target.value) })
+                patch({ filtration_duration_min: Number(e.target.value) })
               }
             />
           </Field>
@@ -760,14 +474,44 @@ export function MFEditor({
 }
 
 // ==============================
-// 6. Pump Editor
+// 6. NF/MF/Pump (Placeholders)
 // ==============================
+export function NFEditor({ node, onChange }: any) {
+  const cfg = node.cfg || {};
+  return (
+    <div className="space-y-2">
+      <MembraneSelect
+        unitType="NF"
+        mode={cfg.membrane_mode}
+        area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
+        A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
+        B={cfg.custom_B_lmh ?? cfg.membrane_B_lmh}
+        rej={cfg.custom_salt_rejection_pct ?? cfg.membrane_salt_rejection_pct}
+        onChange={(u) => onChange({ ...cfg, ...mapMembraneChange(u) })}
+      />
+    </div>
+  );
+}
+
+export function MFEditor({ node, onChange }: any) {
+  const cfg = node.cfg || {};
+  return (
+    <div className="space-y-2">
+      <MembraneSelect
+        unitType="MF"
+        mode={cfg.membrane_mode}
+        area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
+        A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
+        onChange={(u) => onChange({ ...cfg, ...mapMembraneChange(u) })}
+      />
+    </div>
+  );
+}
+
 export function PumpEditor({ node }: any) {
   return (
     <div className="p-4 text-center text-xs text-slate-500 bg-slate-900/50 rounded border border-slate-800 border-dashed">
-      Standalone Pump Node
-      <br />
-      (Use integrated settings in UF/RO units)
+      Standalone Pump Node Settings
     </div>
   );
 }

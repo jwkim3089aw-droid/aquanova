@@ -49,7 +49,6 @@ type FeedDraft = {
   ph: number;
   pressure_bar?: number;
 
-  // ✅ 백엔드 enum과 일치(과거 데이터/하위호환 string도 허용)
   water_type?: FeedWaterType | string | null;
   water_subtype?: string | null;
 
@@ -62,7 +61,6 @@ type FeedDraft = {
   temp_max_C?: number | null;
   feed_note?: string | null;
 
-  // UI 설정 저장용
   charge_balance_mode?: ChargeBalanceMode | null;
 
   [k: string]: unknown;
@@ -111,7 +109,6 @@ export function UnitInspectorModal(props: InspectorProps) {
   const [quick, setQuick] = useState({ nacl_mgL: 0, mgso4_mgL: 0 });
   const [detailsOpen, setDetailsOpen] = useState(false);
 
-  // “한 화면 맞춤” 모드
   const [fitMode, setFitMode] = useState(true);
   const [fitScale, setFitScale] = useState(1);
   const [fitNeedsScroll, setFitNeedsScroll] = useState(false);
@@ -119,16 +116,20 @@ export function UnitInspectorModal(props: InspectorProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
-  // 전하 보정 모드 (WAVE)
   const [cbMode, setCbMode] = useState<ChargeBalanceMode>('anions');
 
+  // ✅ [추가] 적용 완료 애니메이션 상태
+  const [isApplied, setIsApplied] = useState(false);
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setIsApplied(false); // 창이 닫힐 때 상태 리셋
+      return;
+    }
 
     const minT = feed?.temp_min_C ?? feed.temperature_C;
     const maxT = feed?.temp_max_C ?? feed.temperature_C;
 
-    // ✅ 과거 데이터에 "해수" 같은 값이 있어도 enum으로 정규화해서 UI 상태를 만든다
     const wt = normalizeWaterType(feed?.water_type);
 
     setLocalFeed({
@@ -159,7 +160,6 @@ export function UnitInspectorModal(props: InspectorProps) {
     setFitNeedsScroll(false);
   }, [isOpen, selEndpoint?.id, selUnit?.id, feed, feedChemistry]);
 
-  // Fit 스케일 계산
   const fitActive = fitMode && !detailsOpen;
 
   useLayoutEffect(() => {
@@ -227,10 +227,8 @@ export function UnitInspectorModal(props: InspectorProps) {
     };
   }, [isOpen, fitActive]);
 
-  // ✅✅✅ 핵심: 커스텀 훅은 "항상" 호출되어야 함 (return null 이전)
   const derived = useFeedChargeBalance(localChem, cbMode);
 
-  // 이제부터 return null 해도 훅 순서는 깨지지 않음
   if (!isOpen || (!selEndpoint && !selUnit)) return null;
 
   const isFeedNode = selEndpoint?.data.role === 'feed';
@@ -243,8 +241,6 @@ export function UnitInspectorModal(props: InspectorProps) {
       const subtype = String(localFeed.water_subtype ?? '').trim();
       const note = String(localFeed.feed_note ?? '').trim();
 
-      // ✅ derived.chemUsed는 "이온표(보정 적용)" 값,
-      // ✅ scaling fields(알칼리/경도) 포함을 위해 localChem과 merge
       const chemOut: ChemistryInput = {
         ...localChem,
         ...(derived.chemUsed ?? localChem),
@@ -252,7 +248,6 @@ export function UnitInspectorModal(props: InspectorProps) {
         calcium_hardness_mgL_as_CaCO3: derived.calcHardness,
       };
 
-      // ✅ API/저장에 들어가는 값은 반드시 enum으로 정규화
       setFeed((prev) => ({
         ...prev,
         ...localFeed,
@@ -267,7 +262,12 @@ export function UnitInspectorModal(props: InspectorProps) {
     } else if (selUnit && localCfg) {
       updateUnitCfg(selUnit.id, localCfg, setNodes);
     }
-    onClose();
+
+    // ✅ [변경] 적용 완료 피드백 후 지연 닫기
+    setIsApplied(true);
+    setTimeout(() => {
+      onClose();
+    }, 800);
   };
 
   return (
@@ -331,11 +331,36 @@ export function UnitInspectorModal(props: InspectorProps) {
                 >
                   취소
                 </button>
+                {/* ✅ [변경] 적용 버튼에 애니메이션과 상태 적용 */}
                 <button
                   onClick={handleApply}
-                  className="px-4 py-1 rounded text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/20 transition-all active:scale-95"
+                  disabled={isApplied}
+                  className={`px-4 py-1 rounded text-xs font-bold text-white transition-all duration-300 active:scale-95 flex items-center gap-1.5 ${
+                    isApplied
+                      ? 'bg-emerald-600 shadow-lg shadow-emerald-900/40'
+                      : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/20'
+                  }`}
                 >
-                  적용
+                  {isApplied ? (
+                    <>
+                      <svg
+                        className="w-3.5 h-3.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={3}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                      적용 완료!
+                    </>
+                  ) : (
+                    '적용'
+                  )}
                 </button>
               </>
             )}
