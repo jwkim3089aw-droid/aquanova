@@ -5,11 +5,13 @@ from app.api.v1.schemas import MembraneSpec
 from app.api.v1.schemas import MembraneOut
 from app.data.membranes import MEMBRANES
 
+
 def _as_list() -> list[dict[str, Any]]:
     src = MEMBRANES
     if isinstance(src, dict):
         return [dict(id=k, **(v or {})) for k, v in src.items()]
     return list(src or [])
+
 
 def _normalize(raw: dict[str, Any]) -> MembraneSpec:
     # 다양한 키 대응
@@ -34,11 +36,20 @@ def _normalize(raw: dict[str, Any]) -> MembraneSpec:
         family=raw.get("family") or raw.get("type"),
         size=raw.get("size"),
         area_m2=pick_num(raw, "area_m2", "active_area_m2", "area"),
-        A_lmh_bar=pick_num(raw, "A_lmh_bar", "A", "water_perm_Lmh_bar", "water_permeability"),
+        A_lmh_bar=pick_num(
+            raw, "A_lmh_bar", "A", "water_perm_Lmh_bar", "water_permeability"
+        ),
         B_mps=pick_num(raw, "B_mps", "B", "salt_perm_mps", "salt_permeability"),
-        salt_rejection_pct=pick_num(raw, "salt_rejection_pct", "rejection_pct", "NaCl_rejection_pct", "rejection"),
+        salt_rejection_pct=pick_num(
+            raw,
+            "salt_rejection_pct",
+            "rejection_pct",
+            "NaCl_rejection_pct",
+            "rejection",
+        ),
         notes=raw.get("notes"),
     )
+
 
 def load_by_id(code: str) -> Optional[MembraneSpec]:
     if not code:
@@ -50,14 +61,16 @@ def load_by_id(code: str) -> Optional[MembraneSpec]:
             spec = _normalize(m)
             # 최소 안전 기본값 보정
             if spec.area_m2 is None:
-                spec.area_m2 = 37.0 if (spec.size or "").startswith("8040") else 7.9
+                spec.area_m2 = 40.9 if (spec.size or "").startswith("8040") else 7.9
             return spec
     return None
+
 
 def normalize_spec(obj: Any) -> Optional[MembraneSpec]:
     """dict/str/None 무엇이 오든 MembraneSpec으로 정규화."""
     if obj is None:
         return None
+
     if isinstance(obj, MembraneSpec):
         return obj
     if isinstance(obj, dict):
@@ -67,11 +80,12 @@ def normalize_spec(obj: Any) -> Optional[MembraneSpec]:
         except Exception:
             spec = _normalize(obj)
         if spec.area_m2 is None:
-            spec.area_m2 = 37.0
+            spec.area_m2 = 40.9
         return spec
     if isinstance(obj, str):
         return load_by_id(obj)
     return None
+
 
 def resolve_from_options(options: Dict[str, Any] | None) -> MembraneSpec:
     """options에서 membrane_spec 또는 membrane_code/문자열을 찾아 정규화."""
@@ -84,7 +98,14 @@ def resolve_from_options(options: Dict[str, Any] | None) -> MembraneSpec:
     if spec:
         return spec
     # 최종 기본값 (엔진이 반드시 필요로 할 값)
-    return MembraneSpec(id="default-8040", name="Default 8040", area_m2=37.0, A_lmh_bar=3.0, B_mps=1.5e-7)
+    return MembraneSpec(
+        id="default-8040",
+        name="Default 8040",
+        area_m2=40.9,
+        A_lmh_bar=3.0,
+        B_mps=1.5e-7,
+    )
+
 
 # === 추가: 시뮬레이터가 바로 쓸 수 있는 파라미터 추출기 ===
 def get_params_from_options(
@@ -104,7 +125,9 @@ def get_params_from_options(
     spec = resolve_from_options(opts)
 
     # 2) 면적/투과도 (옵션이 우선)
-    area = float(opts.get("area_m2") or opts.get("membrane_area_m2") or spec.area_m2 or 37.0)
+    area = float(
+        opts.get("area_m2") or opts.get("membrane_area_m2") or spec.area_m2 or 40.9
+    )
     A = float(opts.get("A_lmh_bar") or opts.get("A") or spec.A_lmh_bar or 2.0)
 
     # B: LMH 또는 m/s → LMH 변환(1 m/s = 3,600,000 LMH)
@@ -113,7 +136,9 @@ def get_params_from_options(
     elif "B" in opts:
         B_lmh = float(opts["B"])
     else:
-        B_lmh = (float(spec.B_mps) * 3_600_000.0) if (spec.B_mps is not None) else 0.40  # 기본값 [ADDED]
+        B_lmh = (
+            (float(spec.B_mps) * 3_600_000.0) if (spec.B_mps is not None) else 0.40
+        )  # 기본값 [ADDED]
 
     # 3) max_flux 기본치
     max_flux = float(opts.get("max_flux") or 40.0)
@@ -124,7 +149,11 @@ def get_params_from_options(
         salt_rejection_pct = rej if rej <= 1.0 else rej / 100.0
     elif spec.salt_rejection_pct is not None:
         salt_rejection_pct = float(spec.salt_rejection_pct)
-        salt_rejection_pct = salt_rejection_pct if salt_rejection_pct <= 1.0 else salt_rejection_pct / 100.0
+        salt_rejection_pct = (
+            salt_rejection_pct
+            if salt_rejection_pct <= 1.0
+            else salt_rejection_pct / 100.0
+        )
     else:
         # 타입별 기본
         salt_rejection_pct = {
@@ -135,7 +164,13 @@ def get_params_from_options(
             "MF": 0.0,
         }.get(st, 0.99)
 
-    return dict(A=A, B_lmh=B_lmh, area=area, max_flux=max_flux, salt_rejection_pct=salt_rejection_pct)  # [ADDED]
+    return dict(
+        A=A,
+        B_lmh=B_lmh,
+        area=area,
+        max_flux=max_flux,
+        salt_rejection_pct=salt_rejection_pct,
+    )  # [ADDED]
 
 
 def family_for_stage(stage_type: str | None) -> str | None:  # [ADDED]
@@ -146,9 +181,11 @@ def family_for_stage(stage_type: str | None) -> str | None:  # [ADDED]
         return st
     return None
 
+
 # --- NEW: Spec → API Out 변환 헬퍼 ---  # [ADDED]
 def _to_out(spec: MembraneSpec) -> MembraneOut:  # [ADDED]
     return MembraneOut(**spec.model_dump())
+
 
 def list_membranes(  # [CHANGED] 필터 확장
     family: str | None = None,
@@ -166,17 +203,23 @@ def list_membranes(  # [CHANGED] 필터 확장
             s_fam = (spec.family or "").upper()
             if s_fam != fam:
                 continue
-        if size and spec.size and str(spec.size).strip().lower() != str(size).strip().lower():
+        if (
+            size
+            and spec.size
+            and str(spec.size).strip().lower() != str(size).strip().lower()
+        ):
             continue
         if ql:
-            hay = " ".join([
-                spec.id or "",
-                spec.name or "",
-                spec.vendor or "",
-                spec.series or "",
-                spec.family or "",
-                spec.size or "",
-            ]).lower()
+            hay = " ".join(
+                [
+                    spec.id or "",
+                    spec.name or "",
+                    spec.vendor or "",
+                    spec.series or "",
+                    spec.family or "",
+                    spec.size or "",
+                ]
+            ).lower()
             if ql not in hay:
                 continue
 
@@ -184,6 +227,7 @@ def list_membranes(  # [CHANGED] 필터 확장
         if limit and len(out) >= limit:
             break
     return out
+
 
 # --- NEW: 단건 조회용 ---  # [ADDED]
 def get_membrane_out_by_id(membrane_id: str) -> Optional[MembraneOut]:  # [ADDED]

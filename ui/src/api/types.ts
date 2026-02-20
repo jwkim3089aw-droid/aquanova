@@ -1,5 +1,5 @@
 // ui/src/api/types.ts
-// AquaNova API Contract (synced with backend schemas 2026-02-03)
+// AquaNova API Contract (Synced with Backend Schema)
 
 export type ModuleType =
   | 'RO'
@@ -22,14 +22,13 @@ export interface ReportStatusResponse {
   error_message?: string | null;
   artifact_path?: string | null;
 
-  // ✅ backend schema와 맞추기 (있어도 되고 없어도 됨)
   enqueued_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
 }
 
 // ======================
-// (이하 기존 너가 올린 타입들 그대로 유지)
+// Sub-Models (Physics & Geometry)
 // ======================
 
 export interface HRROMassTransferIn {
@@ -44,6 +43,11 @@ export interface HRROMassTransferIn {
   cp_abs_tol_lmh?: number | null;
   cp_relax?: number | null;
   cp_max_iter?: number | null;
+
+  k_mt_multiplier?: number | null;
+  k_mt_min_m_s?: number | null;
+  segments_total?: number | null;
+
   [k: string]: any;
 }
 
@@ -51,9 +55,11 @@ export interface HRROSpacerIn {
   thickness_mm?: number | null;
   filament_diameter_mm?: number | null;
   mesh_size_mm?: number | null;
+
   voidage?: number | null;
   voidage_fallback?: number | null;
   hydraulic_diameter_m?: number | null;
+
   [k: string]: any;
 }
 
@@ -67,6 +73,7 @@ export interface WaterChemistryInput {
 }
 
 export interface IonCompositionInput {
+  // Cations
   NH4?: number | null;
   K?: number | null;
   Na?: number | null;
@@ -75,29 +82,33 @@ export interface IonCompositionInput {
   Sr?: number | null;
   Ba?: number | null;
 
+  // Anions
   CO2?: number | null;
   HCO2?: number | null;
   HCO3?: number | null;
-
-  NO3?: number | null;
-  CO3?: number | null;
-
   NO2?: number | null;
-
+  NO3?: number | null;
   Cl?: number | null;
   F?: number | null;
   SO4?: number | null;
   PO4?: number | null;
   Br?: number | null;
+  CO3?: number | null;
 
+  // Neutrals
   SiO2?: number | null;
   B?: number | null;
 
+  // Metals
   Fe?: number | null;
   Mn?: number | null;
 
   [k: string]: any;
 }
+
+// ======================
+// Main Configuration Inputs
+// ======================
 
 export interface FeedInput {
   flow_m3h: number;
@@ -108,6 +119,7 @@ export interface FeedInput {
 
   water_type?: string | null;
   water_subtype?: string | null;
+
   turbidity_ntu?: number | null;
   tss_mgL?: number | null;
   sdi15?: number | null;
@@ -119,55 +131,74 @@ export interface FeedInput {
 export interface StageConfig {
   stage_id?: string | null;
   module_type: ModuleType;
-  elements: number;
 
-  pressure_bar?: number | null;
-  recovery_target_pct?: number | null;
-  flux_lmh?: number | null;
+  // --- 1. Physical Configuration (Hardware) ---
+  element_inch?: number | null; // Default: 8
+  vessel_count?: number | null; // Pressure Vessels per stage
+  elements_per_vessel?: number | null; // Elements per PV
+  elements: number; // Total Elements (vessel * per_vessel)
 
+  // --- 2. Membrane Specifications ---
   membrane_model?: string | null;
   membrane_area_m2?: number | null;
-  membrane_A_lmh_bar?: number | null;
-  membrane_B_lmh?: number | null;
+
+  membrane_A_lmh_bar?: number | null; // Clean water permeability
+  membrane_B_lmh?: number | null; // Salt passage
   membrane_salt_rejection_pct?: number | null;
 
+  // Membrane Fouling / Aging
+  flow_factor?: number | null; // Default: 0.85 (Aging Factor)
+
+  // --- 3. Operating Conditions ---
+  feed_flow_m3h?: number | null;
+  pressure_bar?: number | null; // Operating Pressure
+  dp_module_bar?: number | null;
+
+  // Recovery Targets
+  recovery_target_pct?: number | null; // RO: Recovery / HRRO: Stop Recovery
+
+  // Back Pressure & Safety Limits
+  permeate_back_pressure_bar?: number | null;
+  burst_pressure_limit_bar?: number | null;
+
+  flux_lmh?: number | null; // Target Flux (Alternative control)
+
+  // --- 4. HRRO / CCRO Specifics ---
   loop_volume_m3?: number | null;
-  recirc_flow_m3h?: number | null;
+  recirc_flow_m3h?: number | null; // Concentrate Recycle Flow
   bleed_m3h?: number | null;
+
+  // Batch Cycle Control
   timestep_s?: number | null;
   max_minutes?: number | null;
   stop_permeate_tds_mgL?: number | null;
-  stop_recovery_pct?: number | null;
+  stop_recovery_pct?: number | null; // Explicit stop condition
 
+  // Engine Settings
+  hrro_engine?: 'excel_only' | 'excel_physics';
+  hrro_excel_only_cp_mode?: 'min_model' | 'none' | 'fixed_rejection';
+  hrro_excel_only_fixed_rejection_pct?: number | null;
+  hrro_excel_only_min_model_rejection_pct?: number | null;
+
+  // Physics Sub-models
   mass_transfer?: HRROMassTransferIn | null;
   spacer?: HRROSpacerIn | null;
 
+  // --- 5. Other / Legacy ---
+  pf_feed_ratio_pct?: number | null;
+  pf_recovery_pct?: number | null;
+  cc_recycle_m3h_per_pv?: number | null;
+  membrane_area_m2_per_element?: number | null;
+  pump_eff?: number | null;
+  ccro_recovery_pct?: number | null;
+
+  // UF/MF Backwash
   filtration_cycle_min?: number | null;
   backwash_duration_sec?: number | null;
   backwash_flux_multiplier?: number | null;
   backwash_flux_lmh?: number | null;
 
   chemistry?: Record<string, any> | null;
-
-  hrro_engine?: 'excel_only' | 'excel_physics';
-  hrro_excel_only_cp_mode?: 'min_model' | 'none' | 'fixed_rejection';
-  hrro_excel_only_fixed_rejection_pct?: number | null;
-  hrro_excel_only_min_model_rejection_pct?: number | null;
-
-  element_inch?: number | null;
-  vessel_count?: number | null;
-  elements_per_vessel?: number | null;
-
-  feed_flow_m3h?: number | null;
-  ccro_recovery_pct?: number | null;
-
-  pf_feed_ratio_pct?: number | null;
-  pf_recovery_pct?: number | null;
-
-  cc_recycle_m3h_per_pv?: number | null;
-  membrane_area_m2_per_element?: number | null;
-
-  pump_eff?: number | null;
 
   [k: string]: any;
 }
@@ -186,10 +217,13 @@ export interface SimulationRequest {
   ions?: IonCompositionInput | null;
 }
 
+// ======================
+// Outputs & Results
+// ======================
+
 export interface TimeSeriesPoint {
   time_min: number;
   recovery_pct: number;
-
   pressure_bar: number;
   tds_mgL: number;
 
@@ -197,6 +231,7 @@ export interface TimeSeriesPoint {
   ndp_bar?: number | null;
   permeate_flow_m3h?: number | null;
   permeate_tds_mgL?: number | null;
+  specific_energy_kwh_m3?: number | null;
 }
 
 export interface ScalingIndexOut {
@@ -218,31 +253,35 @@ export interface StageMetric {
   stage: number;
   module_type: ModuleType;
 
+  // KPIs
   recovery_pct?: number | null;
-
   flux_lmh?: number | null;
   sec_kwhm3?: number | null;
-
   ndp_bar?: number | null;
+
+  // Pressures
   p_in_bar?: number | null;
   p_out_bar?: number | null;
+  dp_bar?: number | null;
+  tmp_bar?: number | null;
   delta_pi_bar?: number | null;
 
+  // Flows
   Qf?: number | null;
   Qp?: number | null;
   Qc?: number | null;
-
-  Cf?: number | null;
-  Cp?: number | null;
-  Cc?: number | null;
 
   gross_flow_m3h?: number | null;
   net_flow_m3h?: number | null;
   backwash_loss_m3h?: number | null;
   net_recovery_pct?: number | null;
 
-  time_history?: TimeSeriesPoint[] | null;
+  // Concentration
+  Cf?: number | null;
+  Cp?: number | null;
+  Cc?: number | null;
 
+  time_history?: TimeSeriesPoint[] | null;
   chemistry?: any;
 
   [k: string]: any;
@@ -262,6 +301,7 @@ export interface KPIOut {
   ndp_bar: number;
   sec_kwhm3: number;
 
+  batchcycle?: number | null;
   prod_tds?: number | null;
   feed_m3h?: number | null;
   permeate_m3h?: number | null;

@@ -1,6 +1,7 @@
 // ui/src/features/simulation/model/feedWater.ts
 // Feed water type utilities (UI <-> backend enum alignment)
 
+// 백엔드 FeedWaterType 호환성을 위해 키값 자체는 유지하되, 화면에 표시될 때(Label)는 WAVE 명칭을 따름
 export type FeedWaterType =
   | 'Seawater'
   | 'Brackish'
@@ -11,22 +12,23 @@ export type FeedWaterType =
 
 export type WaterTypeOption = { value: FeedWaterType; label: string };
 
+// 🛑 WAVE UI의 Water Type 콤보박스와 100% 매칭
 export const WATER_TYPE_OPTIONS: WaterTypeOption[] = [
-  { value: 'Seawater', label: '해수' },
-  { value: 'Brackish', label: '기수' },
-  { value: 'Surface', label: '지표수(강/호수)' },
-  { value: 'Groundwater', label: '지하수' },
-  { value: 'Wastewater', label: '폐수(산업/공정)' },
-  { value: 'Other', label: '기타' },
+  { value: 'Other', label: 'RO Permeate' },
+  { value: 'Brackish', label: 'Municipal Water' },
+  { value: 'Groundwater', label: 'Well Water' },
+  { value: 'Surface', label: 'Surface Water' },
+  { value: 'Seawater', label: 'Seawater' },
+  { value: 'Wastewater', label: 'Wastewater' },
 ];
 
 export const WATER_TYPE_LABEL: Record<FeedWaterType, string> = {
-  Seawater: '해수',
-  Brackish: '기수',
-  Surface: '지표수(강/호수)',
-  Groundwater: '지하수',
-  Wastewater: '폐수(산업/공정)',
-  Other: '기타',
+  Other: 'RO Permeate',
+  Brackish: 'Municipal Water',
+  Groundwater: 'Well Water',
+  Surface: 'Surface Water',
+  Seawater: 'Seawater',
+  Wastewater: 'Wastewater',
 };
 
 export function isFeedWaterType(v: unknown): v is FeedWaterType {
@@ -43,7 +45,7 @@ export function isFeedWaterType(v: unknown): v is FeedWaterType {
 /**
  * ✅ 백엔드 enum 정석화
  * - 과거 데이터(한글/별칭/대소문자/카테고리 문자열)를 FeedWaterType으로 정규화
- * - 못 맞추면 null
+ * - WAVE 카테고리에 맞게 똑똑하게 파싱
  */
 export function normalizeWaterType(v: unknown): FeedWaterType | null {
   if (v == null) return null;
@@ -51,47 +53,57 @@ export function normalizeWaterType(v: unknown): FeedWaterType | null {
   const raw = String(v).trim();
   if (!raw) return null;
 
-  // already valid
   if (isFeedWaterType(raw)) return raw;
 
   const s = raw.toLowerCase();
 
-  // English-ish aliases
-  if (s === 'sea' || s === 'seawater' || s === 'ocean') return 'Seawater';
-  if (s === 'brackish' || s === 'brackishwater') return 'Brackish';
+  // Seawater
+  if (s === 'sea' || s === 'seawater' || s === 'ocean' || raw.includes('해수'))
+    return 'Seawater';
+
+  // Municipal (Brackish)
+  if (
+    s === 'municipal' ||
+    s === 'municipal water' ||
+    s === 'brackish' ||
+    raw.includes('기수')
+  )
+    return 'Brackish';
+
+  // Surface Water
   if (
     s === 'surface' ||
     s === 'surfacewater' ||
     s === 'river' ||
-    s === 'lake' ||
-    s === 'reservoir'
+    raw.includes('지표수')
   )
     return 'Surface';
-  if (s === 'groundwater' || s === 'ground' || s === 'well')
-    return 'Groundwater';
-  if (s === 'waste' || s === 'wastewater' || s === 'industrial')
-    return 'Wastewater';
-  if (s === 'reuse' || s === 'reclaimed') return 'Other';
 
-  // Dataset category strings sometimes stored
-  if (raw === 'Waste') return 'Wastewater';
-  if (raw === 'Reuse') return 'Other';
-
-  // Korean legacy / fuzzy
-  if (raw.includes('해수')) return 'Seawater';
-  if (raw.includes('기수')) return 'Brackish';
+  // Well Water (Groundwater)
   if (
-    raw.includes('지표수') ||
-    raw.includes('강') ||
-    raw.includes('호수') ||
-    raw.includes('저수지')
+    s === 'well' ||
+    s === 'well water' ||
+    s === 'groundwater' ||
+    raw.includes('지하수')
   )
-    return 'Surface';
-  if (raw.includes('지하수') || raw.includes('관정') || raw.includes('우물'))
     return 'Groundwater';
-  if (raw.includes('폐수') || raw.includes('공정수') || raw.includes('산업'))
+
+  // Wastewater
+  if (
+    s === 'waste' ||
+    s === 'wastewater' ||
+    s === 'industrial' ||
+    raw.includes('폐수')
+  )
     return 'Wastewater';
-  if (raw.includes('재이용') || raw.includes('하수') || raw.includes('방류수'))
+
+  // RO Permeate (Other)
+  if (
+    s === 'ro permeate' ||
+    s === 'permeate' ||
+    s === 'reuse' ||
+    raw.includes('재이용')
+  )
     return 'Other';
 
   return null;
@@ -133,13 +145,12 @@ export function resolveWaterType(preset: WaterCatalogPreset): FeedWaterType {
   const cat = String(preset.category ?? '')
     .trim()
     .toLowerCase();
+
   if (cat === 'seawater') return 'Seawater';
-  if (cat === 'brackish') return 'Brackish';
+  if (cat.includes('municipal') || cat === 'brackish') return 'Brackish';
   if (cat === 'surface') return 'Surface';
-  if (cat === 'groundwater') return 'Groundwater';
-  if (cat === 'waste') return 'Wastewater';
-  if (cat === 'wastewater') return 'Wastewater';
-  if (cat === 'reuse') return 'Other';
+  if (cat.includes('well') || cat === 'groundwater') return 'Groundwater';
+  if (cat.includes('waste')) return 'Wastewater';
 
   return 'Other';
 }

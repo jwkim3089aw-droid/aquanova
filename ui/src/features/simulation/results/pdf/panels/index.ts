@@ -12,3 +12,5 @@ export * from './HistoryStatsTable';
 export * from './TimeHistoryTable';
 
 export * from './ElementProfilePanel';
+
+export * from './BrineScalingPanel';

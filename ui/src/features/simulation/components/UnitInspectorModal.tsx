@@ -1,4 +1,3 @@
-// ui/src/features/simulation/components/UnitInspectorModal.tsx
 import React, { useEffect, useState } from 'react';
 import type { Node } from 'reactflow';
 
@@ -9,7 +8,7 @@ import {
   NFEditor,
   MFEditor,
   PumpEditor,
-} from '..';
+} from '..'; // index.ts에서 export한다고 가정
 
 import {
   DEFAULT_CHEMISTRY,
@@ -21,11 +20,11 @@ import {
   type UnitMode,
   type SetNodesFn,
   type SetEdgesFn,
+  type HRROConfig,
   type ROConfig,
   type NFConfig,
   type UFConfig,
   type MFConfig,
-  type HRROConfig,
   type PumpConfig,
 } from '../model/types';
 
@@ -38,7 +37,7 @@ import { roundTo, type ChargeBalanceMode } from '../chemistry';
 import { normalizeWaterType, type FeedWaterType } from '../model/feedWater';
 
 // ------------------------------------------------------------------
-// Unit / Feed Settings Modal
+// Type Definitions
 // ------------------------------------------------------------------
 type FeedDraft = {
   flow_m3h: number;
@@ -82,6 +81,9 @@ interface InspectorProps {
   setSelectedNodeId: (id: string | null) => void;
 }
 
+// ------------------------------------------------------------------
+// Main Component
+// ------------------------------------------------------------------
 export function UnitInspectorModal(props: InspectorProps) {
   const {
     isOpen,
@@ -96,24 +98,30 @@ export function UnitInspectorModal(props: InspectorProps) {
     setNodes,
   } = props;
 
+  // 키보드 삭제 키 방지 (모달 열려있을 때)
   useBlockDeleteKeysWhenOpen(isOpen);
 
+  // Local State for Editing
   const [localFeed, setLocalFeed] = useState<FeedDraft>(feed);
   const [localChem, setLocalChem] = useState<ChemistryInput>(
     feedChemistry ?? DEFAULT_CHEMISTRY,
   );
+  // Unit Config State (Generic Container)
   const [localCfg, setLocalCfg] = useState<UnitData['cfg'] | null>(null);
 
+  // Feed Specific States
   const [quick, setQuick] = useState({ nacl_mgL: 0, mgso4_mgL: 0 });
   const [detailsOpen, setDetailsOpen] = useState(false);
-
   const [cbMode, setCbMode] = useState<ChargeBalanceMode>('anions');
 
-  // ✅ [수정] isApplied 상태 제거됨
+  // Derived Calculations (Charge Balance)
+  const derived = useFeedChargeBalance(localChem, cbMode);
 
+  // Sync State on Open/Selection Change
   useEffect(() => {
     if (!isOpen) return;
 
+    // 1. Sync Feed Data
     const minT = feed?.temp_min_C ?? feed.temperature_C;
     const maxT = feed?.temp_max_C ?? feed.temperature_C;
     const wt = normalizeWaterType(feed?.water_type);
@@ -121,8 +129,7 @@ export function UnitInspectorModal(props: InspectorProps) {
     setLocalFeed({
       ...feed,
       water_type: wt ?? '',
-      water_subtype:
-        feed?.water_subtype == null ? '' : String(feed.water_subtype),
+      water_subtype: feed?.water_subtype ?? '',
       temp_min_C: minT,
       temp_max_C: maxT,
       feed_note: feed?.feed_note ?? '',
@@ -130,28 +137,30 @@ export function UnitInspectorModal(props: InspectorProps) {
 
     setLocalChem(feedChemistry ?? DEFAULT_CHEMISTRY);
     setQuick({ nacl_mgL: 0, mgso4_mgL: 0 });
-    setDetailsOpen(false); // 모달 열릴 때마다 상세 닫힘 상태로 시작
+    setDetailsOpen(false);
 
     const saved = feed?.charge_balance_mode ?? null;
     setCbMode(saved ?? 'anions');
 
+    // 2. Sync Unit Config
     if (selUnit && (selUnit.data as any).type === 'unit') {
       const u = selUnit.data as UnitData;
-      setLocalCfg(JSON.parse(JSON.stringify(u.cfg)) as UnitData['cfg']);
+      // Deep copy to prevent direct mutation of node data
+      setLocalCfg(JSON.parse(JSON.stringify(u.cfg)));
     } else {
       setLocalCfg(null);
     }
   }, [isOpen, selEndpoint?.id, selUnit?.id, feed, feedChemistry]);
-
-  const derived = useFeedChargeBalance(localChem, cbMode);
 
   if (!isOpen || (!selEndpoint && !selUnit)) return null;
 
   const isFeedNode = selEndpoint?.data.role === 'feed';
   const isProductNode = selEndpoint?.data.role === 'product';
 
+  // Apply Changes
   const handleApply = () => {
     if (isFeedNode) {
+      // Feed Update Logic
       const subtype = String(localFeed.water_subtype ?? '').trim();
       const note = String(localFeed.feed_note ?? '').trim();
 
@@ -174,10 +183,10 @@ export function UnitInspectorModal(props: InspectorProps) {
 
       setFeedChemistry(chemOut);
     } else if (selUnit && localCfg) {
+      // Unit Update Logic
       updateUnitCfg(selUnit.id, localCfg, setNodes);
     }
 
-    // ✅ [수정] 지연 없이 즉시 닫기
     onClose();
   };
 
@@ -186,12 +195,12 @@ export function UnitInspectorModal(props: InspectorProps) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
       onClick={onClose}
     >
-      {/* 화면 꽉 채우는 대형 모달 (최대 1600px) */}
+      {/* Large Modal Container */}
       <div
         className="w-full max-w-[1600px] h-[92vh] max-h-[1080px] flex flex-col rounded-xl border border-slate-800 bg-slate-950 shadow-2xl ring-1 ring-white/5 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* Header Section */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/50 shrink-0 h-[60px]">
           <div className="flex items-center gap-3">
             <div
@@ -225,7 +234,6 @@ export function UnitInspectorModal(props: InspectorProps) {
               취소
             </button>
             {!isProductNode && (
-              // ✅ [수정] 애니메이션 없이 심플한 적용 버튼
               <button
                 onClick={handleApply}
                 className="px-6 py-2 rounded text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/20 active:scale-95 transition-all"
@@ -244,7 +252,7 @@ export function UnitInspectorModal(props: InspectorProps) {
           </div>
         </div>
 
-        {/* Body: 스크롤 없이 꽉 채우는 구조 */}
+        {/* Content Body */}
         <div className="flex-1 overflow-hidden bg-slate-950 p-4">
           {isFeedNode ? (
             <FeedInspectorBody
@@ -263,61 +271,65 @@ export function UnitInspectorModal(props: InspectorProps) {
               derived={derived}
             />
           ) : selUnit && localCfg ? (
-            // 유닛 설정창은 내용이 길 수 있으므로 내부 스크롤 허용
             <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
-              {/* Unit Editor Component Rendering */}
+              {/* Unit Type Switching */}
               {(() => {
                 const u = selUnit.data as UnitData;
                 const kind = u.kind as UnitKind;
                 const updateCfg = (newCfg: UnitData['cfg']) =>
                   setLocalCfg(newCfg);
 
-                if (kind === 'HRRO')
-                  return (
-                    <HRROEditor
-                      node={{ ...u, cfg: localCfg as HRROConfig } as any}
-                      onChange={updateCfg as any}
-                    />
-                  );
-                if (kind === 'RO')
-                  return (
-                    <ROEditor
-                      node={{ ...u, cfg: localCfg as ROConfig } as any}
-                      onChange={updateCfg as any}
-                    />
-                  );
-                if (kind === 'UF')
-                  return (
-                    <UFEditor
-                      node={{ ...u, cfg: localCfg as UFConfig } as any}
-                      onChange={updateCfg as any}
-                    />
-                  );
-                if (kind === 'NF')
-                  return (
-                    <NFEditor
-                      node={{ ...u, cfg: localCfg as NFConfig } as any}
-                      onChange={updateCfg as any}
-                    />
-                  );
-                if (kind === 'MF')
-                  return (
-                    <MFEditor
-                      node={{ ...u, cfg: localCfg as MFConfig } as any}
-                      onChange={updateCfg as any}
-                    />
-                  );
-                if (kind === 'PUMP')
-                  return (
-                    <PumpEditor
-                      node={{ ...u, cfg: localCfg as PumpConfig } as any}
-                      onChange={updateCfg as any}
-                    />
-                  );
-
-                return (
-                  <div className="text-sm text-red-300">Unknown Unit Type</div>
-                );
+                switch (kind) {
+                  case 'HRRO':
+                    return (
+                      <HRROEditor
+                        node={{ ...u, cfg: localCfg as HRROConfig } as any}
+                        feed={localFeed}
+                        onChange={updateCfg as any}
+                      />
+                    );
+                  case 'RO':
+                    return (
+                      <ROEditor
+                        node={{ ...u, cfg: localCfg as ROConfig } as any}
+                        onChange={updateCfg as any}
+                      />
+                    );
+                  case 'UF':
+                    return (
+                      <UFEditor
+                        node={{ ...u, cfg: localCfg as UFConfig } as any}
+                        onChange={updateCfg as any}
+                      />
+                    );
+                  case 'NF':
+                    return (
+                      <NFEditor
+                        node={{ ...u, cfg: localCfg as NFConfig } as any}
+                        onChange={updateCfg as any}
+                      />
+                    );
+                  case 'MF':
+                    return (
+                      <MFEditor
+                        node={{ ...u, cfg: localCfg as MFConfig } as any}
+                        onChange={updateCfg as any}
+                      />
+                    );
+                  case 'PUMP':
+                    return (
+                      <PumpEditor
+                        node={{ ...u, cfg: localCfg as PumpConfig } as any}
+                        onChange={updateCfg as any}
+                      />
+                    );
+                  default:
+                    return (
+                      <div className="text-sm text-red-300">
+                        Unknown Unit Type: {kind}
+                      </div>
+                    );
+                }
               })()}
             </div>
           ) : (

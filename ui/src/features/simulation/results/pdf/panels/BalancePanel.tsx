@@ -8,13 +8,19 @@ export function BalancePanel({
   feed,
   perm,
   brine,
+  kpi, // ✅ 새로 추가: 백엔드에서 넘겨주는 kpi 객체
   u,
 }: {
-  feed: any;
-  perm: any;
-  brine: any;
+  feed?: any;
+  perm?: any;
+  brine?: any;
+  kpi?: any;
   u: UnitLabels;
 }) {
+  // ✅ 1. 백엔드 데이터 최우선 사용 (방금 추가한 mass_balance)
+  const mb = kpi?.mass_balance;
+
+  // 2. 백엔드 데이터가 없을 경우를 대비한 Fallback (이전 로직)
   const Qf = pickNumber(feed?.flow_m3h ?? feed?.Q_m3h ?? feed?.Q);
   const Qp = pickNumber(perm?.flow_m3h ?? perm?.Q_m3h ?? perm?.Q);
   const Qb = pickNumber(brine?.flow_m3h ?? brine?.Q_m3h ?? brine?.Q);
@@ -26,32 +32,50 @@ export function BalancePanel({
   const flowOk = [Qf, Qp, Qb].every((x) => x != null);
   const saltOk = flowOk && [Cf, Cp, Cb].every((x) => x != null);
 
-  const flowErr = flowOk
-    ? (Qf as number) - ((Qp as number) + (Qb as number))
-    : null;
   const flowErrPct =
-    flowOk && Qf ? ((flowErr as number) / (Qf as number)) * 100 : null;
+    mb?.flow_error_pct ??
+    (flowOk && Qf
+      ? (((Qf as number) - ((Qp as number) + (Qb as number))) /
+          (Qf as number)) *
+        100
+      : null);
+  const flowErr =
+    mb?.flow_error_m3h ??
+    (flowOk ? (Qf as number) - ((Qp as number) + (Qb as number)) : null);
 
-  // mg/L * m3/h * 1000 L/m3 => mg/h => /1e6 => kg/h
   const Sf = saltOk ? ((Qf as number) * (Cf as number) * 1000) / 1e6 : null;
   const Sp = saltOk ? ((Qp as number) * (Cp as number) * 1000) / 1e6 : null;
   const Sb = saltOk ? ((Qb as number) * (Cb as number) * 1000) / 1e6 : null;
 
-  const saltErr = saltOk
-    ? (Sf as number) - ((Sp as number) + (Sb as number))
-    : null;
   const saltErrPct =
-    saltOk && Sf ? ((saltErr as number) / (Sf as number)) * 100 : null;
+    mb?.salt_error_pct ??
+    (saltOk && Sf
+      ? (((Sf as number) - ((Sp as number) + (Sb as number))) /
+          (Sf as number)) *
+        100
+      : null);
+  const saltErr =
+    mb?.salt_error_kgh ??
+    (saltOk ? (Sf as number) - ((Sp as number) + (Sb as number)) : null);
 
   const rejectionPct =
-    saltOk && Cf && Cf > 0 ? (1 - (Cp as number) / (Cf as number)) * 100 : null;
+    mb?.system_rejection_pct ??
+    (saltOk && Cf && Cf > 0
+      ? (1 - (Cp as number) / (Cf as number)) * 100
+      : null);
 
-  const tone =
-    flowErrPct != null && Math.abs(flowErrPct) > 1
+  const isBalanced =
+    mb?.is_balanced ??
+    (flowErrPct != null &&
+      Math.abs(flowErrPct) < 1 &&
+      saltErrPct != null &&
+      Math.abs(saltErrPct) < 5);
+
+  const tone = isBalanced
+    ? 'emerald'
+    : flowErrPct != null && Math.abs(flowErrPct) > 1
       ? 'rose'
-      : flowErrPct != null && Math.abs(flowErrPct) > 0.2
-        ? 'amber'
-        : 'emerald';
+      : 'amber';
 
   return (
     <div className="space-y-3">
@@ -105,11 +129,6 @@ export function BalancePanel({
           </div>
           <div className="text-[10px] text-slate-500">1 − Cp/Cf</div>
         </div>
-      </div>
-
-      <div className="text-[10px] text-slate-500">
-        * Wave 보고서에서 “밸런스/품질 신뢰도”를 주는 핵심 블록을 AquaNova
-        스트림 값으로 재구성했습니다.
       </div>
     </div>
   );

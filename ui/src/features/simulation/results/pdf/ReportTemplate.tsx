@@ -47,6 +47,7 @@ import {
   HRROHistoryChart,
   HistoryStatsTable,
   TimeHistoryTable,
+  BrineScalingPanel, // ✅ 새로 추가된 패널 Import
 } from './panels';
 
 type UnitBag = {
@@ -224,7 +225,8 @@ export const ReportTemplate = React.forwardRef<HTMLDivElement, ReportProps>(
           title="Mass & Salt Balance"
           icon={<ListChecks className="w-4 h-4 opacity-70" />}
         >
-          <BalancePanel feed={feed} perm={perm} brine={brine} u={u} />
+          {/* ✅ 백엔드에서 받아온 kpi.mass_balance를 BalancePanel로 넘겨줌 */}
+          <BalancePanel feed={feed} perm={perm} brine={brine} kpi={kpi} u={u} />
         </Section>
 
         <div className="mt-4 text-[10px] text-slate-500">
@@ -305,12 +307,32 @@ export const ReportTemplate = React.forwardRef<HTMLDivElement, ReportProps>(
         <Section
           title="System Warnings"
           icon={<AlertTriangle className="w-4 h-4 opacity-70" />}
-          right={
-            <span className={THEME.MUTED}>chemistry.violations aggregate</span>
-          }
+          right={<span className={THEME.MUTED}>Global System Guidelines</span>}
         >
-          <SystemWarningsPanel stages={stages} />
+          {/* ✅ 백엔드에서 집계된 globalWarnings를 Panel에 전달 */}
+          <SystemWarningsPanel
+            stages={stages}
+            globalWarnings={safeArr(safeData.warnings)}
+          />
         </Section>
+
+        {/* ✅ 새로 추가된 Brine Scaling Panel 렌더링 영역 */}
+        {safeObj(safeData.chemistry)?.final_brine && (
+          <>
+            <div className="h-4" />
+            <Section
+              title="Brine Scaling & Solubility"
+              icon={<FlaskConical className="w-4 h-4 opacity-70" />}
+              right={
+                <span className={THEME.MUTED}>
+                  Concentrate Stream (100% Limit)
+                </span>
+              }
+            >
+              <BrineScalingPanel chemistry={safeObj(safeData.chemistry)} />
+            </Section>
+          </>
+        )}
 
         {mode === 'STAGE' ? (
           <div className="mt-4 text-[10px] text-slate-500">
@@ -370,14 +392,10 @@ export const ReportTemplate = React.forwardRef<HTMLDivElement, ReportProps>(
       const chem = safeObj(s?.chemistry);
       const violations = safeArr(chem?.violations ?? []);
 
-      // best-effort KPI extraction (UF는 값이 없을 수 있으므로 "있으면 표시")
       const recovery = s?.recovery_pct ?? null;
       const flux = s?.flux_lmh ?? s?.jw_avg_lmh ?? null;
-
-      // TMP 우선, 없으면 ΔP
       const tmp = s?.tmp_bar ?? s?.tmp ?? null;
       const dp = s?.dp_bar ?? null;
-
       const sec = s?.sec_kwhm3 ?? s?.sec_kwh_m3 ?? null;
 
       const items = [
@@ -400,7 +418,7 @@ export const ReportTemplate = React.forwardRef<HTMLDivElement, ReportProps>(
 
         { k: 'Pin', v: s?.p_in_bar ?? null, unit: u.pressure },
         { k: 'Pout', v: s?.p_out_bar ?? null, unit: u.pressure },
-      ].filter((it) => notNil(it.v)); // 0은 표시되어야 하므로 null/undefined만 제거
+      ].filter((it) => notNil(it.v));
 
       return (
         <Page key={`uf-${stageNo}`} breakBefore>
@@ -658,7 +676,7 @@ export const ReportTemplate = React.forwardRef<HTMLDivElement, ReportProps>(
       .flatMap(({ stageNo, moduleType, s }) => {
         if (moduleType === 'UF') return [buildUfPage(s, stageNo)];
         if (moduleType === 'HRRO') return buildHrroPages(s, stageNo);
-        return []; // RO/NF/MF 등은 현재 상세 페이지 없음(필요 시 여기서 확장)
+        return [];
       });
 
     return (

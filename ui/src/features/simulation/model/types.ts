@@ -15,16 +15,11 @@ export type UnitKind = 'RO' | 'NF' | 'UF' | 'MF' | 'HRRO' | 'PUMP';
 export type BaseMembraneConfig = {
   membrane_mode?: 'catalog' | 'custom';
   membrane_model?: string;
-
-  // custom: recommended "per-element area(m2)" consistent with backend guidance
   custom_area_m2?: number;
-
-  // custom physics
   custom_A_lmh_bar?: number;
   custom_B_lmh?: number;
   custom_salt_rejection_pct?: number;
 
-  // integrated pump (UI only; not a backend stage)
   enable_pump?: boolean;
   pump_pressure_bar?: number;
   pump_efficiency_pct?: number;
@@ -35,8 +30,6 @@ export type ROConfig = BaseMembraneConfig & {
   mode: 'pressure' | 'recovery';
   pressure_bar?: number;
   recovery_target_pct?: number;
-
-  // (legacy/optional fields kept)
   [k: string]: any;
 };
 
@@ -45,19 +38,15 @@ export type NFConfig = BaseMembraneConfig & {
   mode: 'pressure' | 'recovery';
   pressure_bar?: number;
   recovery_target_pct?: number;
-
   [k: string]: any;
 };
 
 export type UFConfig = BaseMembraneConfig & {
   elements: number;
-
   filtrate_flux_lmh_25C?: number;
   backwash_flux_lmh?: number;
-
   filtration_duration_min?: number;
   uf_backwash_duration_s?: number;
-
   [k: string]: any;
 };
 
@@ -66,36 +55,24 @@ export type MFConfig = BaseMembraneConfig & {
   mode: 'pressure' | 'recovery';
   pressure_bar?: number;
   recovery_target_pct?: number;
-
   mf_filtration_duration_min?: number;
   mf_backwash_duration_s?: number;
   mf_filtrate_flux_lmh_25C?: number;
   mf_backwash_flux_lmh?: number;
-
   [k: string]: any;
 };
 
 export type HRROConfig = BaseMembraneConfig & {
   elements: number;
-
-  // pressure setpoint (bar in SI mode; psi in US mode)
   p_set_bar: number;
-
   recirc_flow_m3h: number;
   bleed_m3h: number;
   loop_volume_m3: number;
-
   timestep_s: number;
   max_minutes: number;
 
   stop_permeate_tds_mgL: number | null;
   stop_recovery_pct: number | null;
-
-  // ===== HRRO Excel Design Inputs =====
-  hrro_engine?: 'excel_only' | 'excel_physics';
-  hrro_excel_only_cp_mode?: 'min_model' | 'none' | 'fixed_rejection';
-  hrro_excel_only_fixed_rejection_pct?: number;
-  hrro_excel_only_min_model_rejection_pct?: number;
 
   element_inch?: number;
   vessel_count?: number;
@@ -109,11 +86,8 @@ export type HRROConfig = BaseMembraneConfig & {
   membrane_area_m2_per_element?: number;
 
   pump_eff?: number;
-
-  // advanced inputs (passthrough)
   mass_transfer?: Record<string, any>;
   spacer?: Record<string, any>;
-
   [k: string]: any;
 };
 
@@ -165,16 +139,15 @@ export type SetNodesFn = Dispatch<SetStateAction<Node<FlowData>[]>>;
 export type SetEdgesFn = Dispatch<SetStateAction<Edge[]>>;
 
 // ==========================================================
-// 3) Chemistry UI Model (superset)
-// - UI keeps user-friendly keys (xxx_mgL), we map -> backend chemistry/ions in useFlowLogic
+// 3) Chemistry UI Model (Strict WAVE Ordering)
 // ==========================================================
 
 export type ChemistryInput = {
-  // scaling inputs (required)
+  // scaling inputs
   alkalinity_mgL_as_CaCO3: number | null;
   calcium_hardness_mgL_as_CaCO3: number | null;
 
-  // ions (mg/L)
+  // --- Cations (+) ---
   nh4_mgL?: number | null;
   k_mgL?: number | null;
   na_mgL?: number | null;
@@ -182,32 +155,31 @@ export type ChemistryInput = {
   ca_mgL?: number | null;
   sr_mgL?: number | null;
   ba_mgL?: number | null;
-
-  // ✅ WAVE/프리셋/백엔드 계약에 있는 금속 이온(현재 useFlowLogic에서 쓰고 있음)
+  // Non-WAVE (kept for compatibility, UI will hide by default)
   fe_mgL?: number | null;
   mn_mgL?: number | null;
 
+  // --- Anions (-) ---
+  co3_mgL?: number | null;
   hco3_mgL?: number | null;
-  no3_mgL?: number | null; // backend may have NO2; keep UI NO3 as-is
+  no3_mgL?: number | null;
   cl_mgL?: number | null;
   f_mgL?: number | null;
   so4_mgL?: number | null;
   br_mgL?: number | null;
   po4_mgL?: number | null;
 
-  co3_mgL?: number | null;
-  co2_mgL?: number | null;
-
+  // --- Neutrals ---
   sio2_mgL?: number | null;
   b_mgL?: number | null;
+  co2_mgL?: number | null;
 
-  // legacy support / convenience (scaling pack)
+  // legacy support
   sulfate_mgL?: number | null;
   barium_mgL?: number | null;
   strontium_mgL?: number | null;
   silica_mgL_SiO2?: number | null;
 
-  // ✅ any 대신 unknown (정석)
   [k: string]: unknown;
 };
 
@@ -229,36 +201,35 @@ export type ChemistrySummary = {
 };
 
 // ==========================================================
-// 4) Persistence Model
+// 4) Persistence Model (Strict WAVE Feed Setup)
 // ==========================================================
 
-/**
- * ✅ UI Feed State
- * - useFlowLogic / sessionStorage / localStorage 모두 이 타입을 사용
- * - backend FeedInput과 1:1일 필요는 없고(UI 전용 필드 포함), 최소한 "UI가 들고 있는 것"과는 일치해야 한다.
- */
 export type FeedState = {
+  // Flow & Basic
   flow_m3h: number;
   tds_mgL: number;
-  temperature_C: number;
   ph: number;
-
   pressure_bar?: number;
 
-  // WAVE meta
+  // WAVE Temperature (3 points)
+  temperature_C: number; // Design Temp
+  temp_min_C: number | null;
+  temp_max_C: number | null;
+
+  // WAVE Water Meta
   water_type?: string | null;
   water_subtype?: string | null;
-  turbidity_ntu?: number | null;
-  tss_mgL?: number | null;
-  sdi15?: number | null;
-  toc_mgL?: number | null;
 
-  // UI-only (optional)
-  temp_min_C?: number | null;
-  temp_max_C?: number | null;
-  feed_note?: string | null;
+  // WAVE Solid Content
+  turbidity_ntu: number | null;
+  tss_mgL: number | null;
+  sdi15: number | null;
+
+  // WAVE Organic Content
+  toc_mgL: number | null;
 
   // UI preference
+  feed_note?: string | null;
   charge_balance_mode?: ChargeBalanceMode | null;
 
   [k: string]: unknown;
@@ -315,7 +286,6 @@ export const DEFAULT_CHEMISTRY: ChemistryInput = {
   silica_mgL_SiO2: null,
 };
 
-// --- conversions
 export function convFlow(v: number, from: UnitMode, to: UnitMode): number {
   if (from === to) return v;
   return from === 'SI' ? v * GPM_PER_M3H : v / GPM_PER_M3H;
@@ -376,28 +346,19 @@ export function clampInt(v: any, lo: number, hi: number): number {
 export type HRRORunOutput = {
   minutes: number;
   recovery_pct: number;
-
   V_loop_final_m3: number;
   C_loop_final_mgL: number;
-
   Qp_total_m3: number;
   Cp_mix_mgL: number;
-
-  // standardized
   flux_lmh: number;
   ndp_bar: number;
   sec_kwhm3: number;
-
-  // legacy
   jw_avg_lmh?: number;
-
   p_set_bar: number;
   avg_delta_pi_bar: number;
   bleed_total_m3: number;
-
   time_history: TimeSeriesPoint[];
   stage_metrics: any[];
-
   kpi?: {
     flux_lmh: number;
     ndp_bar: number;

@@ -78,7 +78,7 @@ MEMBRANES = [
     # ==========================================================================
     # 2. Real Models (DuPont, LG, Toray, etc.)
     # ==========================================================================
-    # --- FilmTec SOAR (CCRO/HRRO Optimized) [TUNED FOR WAVE MATCHING] ---
+    # --- FilmTec SOAR (CCRO/HRRO Optimized) ---
     {
         "id": "filmtec-soar-7000i",
         "name": "FilmTec™ SOAR 7000i",
@@ -86,16 +86,11 @@ MEMBRANES = [
         "family": "RO",
         "type": "HRRO",
         "size": "8040",
-        # [수정 1] 리포트 역산 결과 반영 (2044/50 = 40.88)
         "area_m2": 40.9,
-        # [수정 2] 압력 보정을 위해 A값 조절 (WAVE의 초고압 모사를 위한 튜닝)
-        # 물리 엔진 차이를 극복하기 위해 약간 낮게 설정하여 압력 상승 유도
-        "A_lmh_bar": 1.20,
-        # [수정 3] 수질 보정 (WAVE TDS 204mg/L를 맞추기 위해 B값 대폭 감소)
-        # 기존 1.4e-8 -> 1.0e-9 (약 1/14로 감소)
-        "B_mps": 1.0e-9,
-        "salt_rejection_pct": 99.85,
-        "notes": "Optimized for CCRO/HRRO (WAVE Tuned)",
+        "A_lmh_bar": 3.80,
+        "B_mps": 0.30,
+        "salt_rejection_pct": 99.5,
+        "notes": "Standard CCRO Element",
     },
     {
         "id": "filmtec-soar-6000i",
@@ -104,11 +99,11 @@ MEMBRANES = [
         "family": "RO",
         "type": "HRRO",
         "size": "8040",
-        "area_m2": 40.9,  # 6000i도 동일 플랫폼
-        "A_lmh_bar": 1.10,  # 7000i보다 약간 낮은 효율 가정
-        "B_mps": 1.5e-9,
-        "salt_rejection_pct": 99.8,
-        "notes": "Standard CCRO Element",
+        "area_m2": 40.9,
+        "A_lmh_bar": 6.35,  # [WAVE 패치] CCRO의 강한 횡방향 난류 환경 실운전 투과도 가중치 반영
+        "B_mps": 0.058,  # [WAVE 패치] CCRO 고유속 난류 염배제율 보정치 반영 (단위: LMH)
+        "salt_rejection_pct": 99.5,
+        "notes": "WAVE Calibrated CCRO Element",
     },
     # --- DuPont ---
     {

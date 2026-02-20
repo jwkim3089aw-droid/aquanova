@@ -11,6 +11,8 @@ export const MW = {
   Ca: 40.078,
   Sr: 87.62,
   Ba: 137.327,
+
+  // 백엔드 연산을 위해 분자량 데이터는 남겨두되 UI 리스트에서는 제외
   Fe: 55.845,
   Mn: 54.938,
 
@@ -28,6 +30,7 @@ export const MW = {
   CO2: 44.009,
 } as const;
 
+// 🛑 WAVE 레이아웃과 100% 동일한 순서 및 항목 적용
 export const CATIONS: IonDef[] = [
   { label: 'NH4', key: 'nh4_mgL', mw: MW.NH4, z: +1 },
   { label: 'K', key: 'k_mgL', mw: MW.K, z: +1 },
@@ -36,11 +39,11 @@ export const CATIONS: IonDef[] = [
   { label: 'Ca', key: 'ca_mgL', mw: MW.Ca, z: +2 },
   { label: 'Sr', key: 'sr_mgL', mw: MW.Sr, z: +2 },
   { label: 'Ba', key: 'ba_mgL', mw: MW.Ba, z: +2 },
-  { label: 'Fe', key: 'fe_mgL', mw: MW.Fe, z: +2 },
-  { label: 'Mn', key: 'mn_mgL', mw: MW.Mn, z: +2 },
+  // Fe, Mn 숨김 (WAVE UI 기준)
 ];
 
 export const ANIONS: IonDef[] = [
+  { label: 'CO3', key: 'co3_mgL', mw: MW.CO3, z: -2 }, // CO3 맨 위로 이동
   { label: 'HCO3', key: 'hco3_mgL', mw: MW.HCO3, z: -1 },
   { label: 'NO3', key: 'no3_mgL', mw: MW.NO3, z: -1 },
   { label: 'Cl', key: 'cl_mgL', mw: MW.Cl, z: -1 },
@@ -48,7 +51,6 @@ export const ANIONS: IonDef[] = [
   { label: 'SO4', key: 'so4_mgL', mw: MW.SO4, z: -2 },
   { label: 'Br', key: 'br_mgL', mw: MW.Br, z: -1 },
   { label: 'PO4', key: 'po4_mgL', mw: MW.PO4, z: -3 },
-  { label: 'CO3', key: 'co3_mgL', mw: MW.CO3, z: -2 },
 ];
 
 export const NEUTRALS: IonDef[] = [

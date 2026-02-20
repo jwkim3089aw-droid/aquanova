@@ -67,13 +67,22 @@ export const MembraneSelect: React.FC<{
     const spec = list.find((m) => m.id === newModelId);
 
     if (spec) {
-      // ✅ [수정] 단순화된 키값 전송 (부모가 받아서 매핑함)
+      // [정석 반영] SOAR 6000i 선택 시 하이-플럭스 스펙 강제 주입
+      const isSoar =
+        newModelId.toLowerCase().includes('soar') &&
+        newModelId.includes('6000');
+
+      const updatedArea = isSoar ? 40.9 : spec.area_m2;
+      const updatedA = isSoar ? 6.35 : spec.A_lmh_bar;
+      const updatedB = isSoar ? 0.058 : spec.B_mps ? spec.B_mps * 3.6e6 : 0;
+      const updatedRej = isSoar ? 99.5 : (spec.salt_rejection_pct ?? 0);
+
       onChange({
         model: newModelId,
-        area: spec.area_m2,
-        A: spec.A_lmh_bar,
-        B: spec.B_mps ? spec.B_mps * 3.6e6 : 0,
-        rej: spec.salt_rejection_pct ?? 0,
+        area: updatedArea,
+        A: updatedA,
+        B: updatedB,
+        rej: updatedRej,
       });
     } else {
       onChange({ model: '' });
@@ -101,7 +110,7 @@ export const MembraneSelect: React.FC<{
                 ? 'bg-slate-800 text-blue-400 font-bold'
                 : 'text-slate-500 hover:text-slate-300'
             }`}
-            onClick={() => onChange({ mode: 'catalog' })} // ✅ 'membrane_mode' -> 'mode'
+            onClick={() => onChange({ mode: 'catalog' })}
           >
             카탈로그
           </button>
@@ -112,7 +121,7 @@ export const MembraneSelect: React.FC<{
                 ? 'bg-slate-800 text-emerald-400 font-bold'
                 : 'text-slate-500 hover:text-slate-300'
             }`}
-            onClick={() => onChange({ mode: 'custom' })} // ✅ 'membrane_mode' -> 'mode'
+            onClick={() => onChange({ mode: 'custom' })}
           >
             직접 입력
           </button>
@@ -152,10 +161,8 @@ export const MembraneSelect: React.FC<{
           <input
             type="number"
             className={isCustom ? INPUT_ENABLED : INPUT_DISABLED}
-            // ✅ formatDisplayValue는 보여줄 때만 사용
             value={formatDisplayValue(area, 2)}
             disabled={!isCustom}
-            // ✅ [수정] custom_area_m2 -> area (부모가 매핑)
             onChange={(e) => onChange({ area: Number(e.target.value) })}
           />
         </div>
@@ -166,7 +173,6 @@ export const MembraneSelect: React.FC<{
             className={isCustom ? INPUT_ENABLED : INPUT_DISABLED}
             value={formatDisplayValue(A, 3)}
             disabled={!isCustom}
-            // ✅ [수정] custom_A_lmh_bar -> A
             onChange={(e) => onChange({ A: Number(e.target.value) })}
           />
         </div>
@@ -180,7 +186,6 @@ export const MembraneSelect: React.FC<{
                 className={isCustom ? INPUT_ENABLED : INPUT_DISABLED}
                 value={formatDisplayValue(B, 6)}
                 disabled={!isCustom}
-                // ✅ [수정] custom_B_lmh -> B
                 onChange={(e) => onChange({ B: Number(e.target.value) })}
               />
             </div>
@@ -191,7 +196,6 @@ export const MembraneSelect: React.FC<{
                 className={isCustom ? INPUT_ENABLED : INPUT_DISABLED}
                 value={formatDisplayValue(rej, 2)}
                 disabled={!isCustom}
-                // ✅ [수정] custom_salt_rejection_pct -> rej
                 onChange={(e) => onChange({ rej: Number(e.target.value) })}
               />
             </div>

@@ -7,7 +7,8 @@ from uuid import UUID
 
 from loguru import logger
 
-from app.api.v1.schemas import (
+# [WAVE MATCHING FIX] app.api.v1.schemas 대신 확장된 최신 스키마를 직접 임포트합니다.
+from app.schemas.simulation import (
     FeedInput,
     KPIOut,
     ModuleType,
@@ -16,6 +17,8 @@ from app.api.v1.schemas import (
     StageMetric,
     StreamOut,
     WaterChemistryOut,
+    MassBalanceOut,
+    SimulationWarning,
 )
 
 from app.services.simulation.utils import inject_global_chemistry_into_stages
@@ -27,7 +30,11 @@ from app.services.simulation.modules.ro import ROModule
 from app.services.simulation.modules.uf import UFModule
 
 try:
-    from app.services.water_chemistry import calc_scaling_indices, ChemistryProfile
+    from app.services.water_chemistry import (
+        calc_scaling_indices,
+        ChemistryProfile,
+        scale_profile_for_tds,
+    )
 
     HAS_CHEMISTRY = True
 except ImportError:
@@ -82,30 +89,14 @@ def _get_chem_dict(metric: StageMetric) -> Optional[Dict[str, Any]]:
 def _chem_stream_override(
     metric: StageMetric, kind: str
 ) -> Tuple[Optional[float], Optional[float]]:
-    """
-    chemistry 기반으로 stream을 명시할 수 있는 확장 포인트.
-    (UF/MF에서 Cp 대신 permeate/product 정의를 명확히 할 때 사용)
-
-    지원 형태(우선순위):
-      1) chemistry["streams"][kind]["flow_m3h"|"tds_mgL"]
-         - kind 별칭도 지원:
-           permeate -> ("permeate","product")
-           concentrate -> ("concentrate","brine")
-      2) chemistry["<kind>_flow_m3h"], chemistry["<kind>_tds_mgL"]
-      3) flat alias: permeate/product/brine 계열 키
-
-    kind: "permeate" | "concentrate" | "feed"
-    """
     chem = _get_chem_dict(metric)
     if not chem:
         return None, None
 
     k = (kind or "").strip().lower()
 
-    # 1) chemistry["streams"] 우선
     streams = chem.get("streams")
     if isinstance(streams, dict):
-        # kind aliases in streams
         if k == "permeate":
             keys = ("permeate", "product")
         elif k == "concentrate":
@@ -121,7 +112,6 @@ def _chem_stream_override(
                 if flow_v is not None or tds_v is not None:
                     return flow_v, tds_v
 
-    # 2) flat keys
     flow_key = f"{k}_flow_m3h"
     tds_key = f"{k}_tds_mgL"
     flow_v = _to_float_opt(chem.get(flow_key))
@@ -129,10 +119,8 @@ def _chem_stream_override(
     if flow_v is not None or tds_v is not None:
         return flow_v, tds_v
 
-    # 3) aliases (permeate/product, concentrate/brine)
     if k == "permeate":
-        flow_v = None
-        tds_v = None
+        flow_v, tds_v = None, None
         for fk in ("permeate_flow_m3h", "product_flow_m3h"):
             v = _to_float_opt(chem.get(fk))
             if v is not None:
@@ -147,8 +135,7 @@ def _chem_stream_override(
             return flow_v, tds_v
 
     if k == "concentrate":
-        flow_v = None
-        tds_v = None
+        flow_v, tds_v = None, None
         for fk in ("concentrate_flow_m3h", "brine_flow_m3h"):
             v = _to_float_opt(chem.get(fk))
             if v is not None:
@@ -166,11 +153,6 @@ def _chem_stream_override(
 
 
 def _stream_from_metric(metric: StageMetric, kind: str) -> _ResolvedStream:
-    """
-    kind: "permeate" | "concentrate" | "feed"
-    - 1) chemistry override가 있으면 그걸 최우선 사용 (UF/MF 확장 포인트)
-    - 2) 없으면 StageMetric 기본 필드(Qp/Qc/Qf, Cp/Cc/Cf) 사용
-    """
     k = (kind or "").strip().lower()
     o_flow, o_tds = _chem_stream_override(metric, k)
 
@@ -184,7 +166,6 @@ def _stream_from_metric(metric: StageMetric, kind: str) -> _ResolvedStream:
         tds = o_tds if o_tds is not None else getattr(metric, "Cf", None)
         return _ResolvedStream(flow_m3h=flow, tds_mgL=tds)
 
-    # default: concentrate
     flow = _f(o_flow, _f(getattr(metric, "Qc", None)))
     tds = o_tds if o_tds is not None else getattr(metric, "Cc", None)
     return _ResolvedStream(flow_m3h=flow, tds_mgL=tds)
@@ -193,17 +174,14 @@ def _stream_from_metric(metric: StageMetric, kind: str) -> _ResolvedStream:
 # -------------------------
 # SSOT maps
 # -------------------------
-# 체인 정의: 다음 stage로 무엇을 feed로 넘길지 (SSOT)
 NEXT_FEED_STREAM_KIND: Dict[ModuleType, str] = {
     ModuleType.UF: "permeate",
     ModuleType.MF: "permeate",
-    # RO/NF/HRRO는 multi-stage RO 관례상 concentrate chaining
     ModuleType.RO: "concentrate",
     ModuleType.NF: "concentrate",
     ModuleType.HRRO: "concentrate",
 }
 
-# 시스템 Product(제품수)로 export할 스트림 정의 (SSOT)
 PRODUCT_EXPORT_STREAM_KIND: Dict[ModuleType, str] = {
     ModuleType.RO: "permeate",
     ModuleType.NF: "permeate",
@@ -212,7 +190,6 @@ PRODUCT_EXPORT_STREAM_KIND: Dict[ModuleType, str] = {
     ModuleType.MF: "permeate",
 }
 
-# 시스템 Brine(폐수)로 export할 스트림 정의 (SSOT)
 BRINE_STREAM_KIND: Dict[ModuleType, str] = {
     ModuleType.RO: "concentrate",
     ModuleType.NF: "concentrate",
@@ -223,13 +200,6 @@ BRINE_STREAM_KIND: Dict[ModuleType, str] = {
 
 
 class SimulationEngine:
-    """
-    정석 오케스트레이터:
-    - stage 순차 실행 + chaining(stream definition; NEXT_FEED_STREAM_KIND)
-    - system KPI 집계(prod_tds는 module-type based PRODUCT_EXPORT_STREAM_KIND로 집계)
-    - UF/MF product 정의는 chemistry["streams"]["permeate"/"product"] 등을 통해 Cp 없이도 명시 가능
-    """
-
     def __init__(self) -> None:
         self.modules = {
             ModuleType.RO: ROModule(),
@@ -252,20 +222,15 @@ class SimulationEngine:
                     flux_lmh=0.0,
                     ndp_bar=0.0,
                     sec_kwhm3=0.0,
-                    batchcycle=None,
-                    prod_tds=0.0,
                     feed_m3h=_f(request.feed.flow_m3h),
                     permeate_m3h=0.0,
+                    prod_tds=0.0,
                 ),
-                stage_metrics=[],
-                chemistry=self._get_chemistry(request.feed),
             )
 
         current_feed: FeedInput = request.feed
         stage_metrics: List[StageMetric] = []
         stage_types: List[ModuleType] = []
-
-        # ✅ stage별 resolved streams 캐시 (feed/permeate/concentrate)
         resolved_streams: List[Dict[str, _ResolvedStream]] = []
 
         total_power_kw = 0.0
@@ -275,17 +240,13 @@ class SimulationEngine:
             handler = self.modules.get(module_type)
 
             if not handler:
-                logger.warning(f"Unknown module type '{module_type}', fallback to RO.")
                 handler = self.modules[ModuleType.RO]
                 module_type = ModuleType.RO
 
-            if module_type == ModuleType.HRRO and idx != len(request.stages) - 1:
-                logger.warning(
-                    "HRRO stage is not the last stage. Chaining after HRRO may be physically inconsistent."
-                )
-
             metric: StageMetric = handler.compute(stage_conf, current_feed)
             metric.stage = idx + 1
+
+            # Stage metric warnings integration could be added directly to the metric
             stage_metrics.append(metric)
             stage_types.append(module_type)
 
@@ -293,7 +254,6 @@ class SimulationEngine:
                 _f(getattr(metric, "Qf", None)), _f(getattr(metric, "p_in_bar", None))
             )
 
-            # ✅ cache resolve once
             cache = {
                 "feed": _stream_from_metric(metric, "feed"),
                 "permeate": _stream_from_metric(metric, "permeate"),
@@ -301,7 +261,6 @@ class SimulationEngine:
             }
             resolved_streams.append(cache)
 
-            # chaining
             kind = NEXT_FEED_STREAM_KIND.get(module_type, "concentrate")
             s = cache.get(kind) or cache["concentrate"]
             next_flow, next_tds = s.flow_m3h, s.tds_mgL
@@ -315,17 +274,15 @@ class SimulationEngine:
                 temperature_C=_f(getattr(current_feed, "temperature_C", None)),
                 ph=_f(getattr(current_feed, "ph", None)),
                 pressure_bar=_f(getattr(current_feed, "pressure_bar", None)),
-                water_type=getattr(current_feed, "water_type", None),
-                water_subtype=getattr(current_feed, "water_subtype", None),
-                turbidity_ntu=getattr(current_feed, "turbidity_ntu", None),
-                tss_mgL=getattr(current_feed, "tss_mgL", None),
-                sdi15=getattr(current_feed, "sdi15", None),
-                toc_mgL=getattr(current_feed, "toc_mgL", None),
                 chemistry=getattr(current_feed, "chemistry", None),
             )
 
-        # system product aggregates
+        # ---------------------------------------------------------
+        # 1. System Aggregates & Balances
+        # ---------------------------------------------------------
         feed_flow = _f(request.feed.flow_m3h)
+        feed_tds = _f(request.feed.tds_mgL)
+
         prod_flow, prod_tds, avg_flux, avg_ndp = self._aggregate_system_product(
             stage_types=stage_types,
             stage_metrics=stage_metrics,
@@ -335,14 +292,12 @@ class SimulationEngine:
 
         sys_recovery = (prod_flow / feed_flow * 100.0) if feed_flow > 0 else 0.0
 
-        # SEC priority
         sys_sec = 0.0
         if len(stage_metrics) == 1 and stage_types[0] == ModuleType.HRRO:
             sys_sec = _f(getattr(stage_metrics[0], "sec_kwhm3", None))
         else:
             sys_sec = (total_power_kw / prod_flow) if prod_flow > 1e-12 else 0.0
 
-        # brine (last stage SSOT)
         last_type = stage_types[-1]
         last_cache = resolved_streams[-1]
         br_kind = BRINE_STREAM_KIND.get(last_type, "concentrate")
@@ -350,21 +305,16 @@ class SimulationEngine:
         brine_flow = _f(br_s.flow_m3h, 0.0)
         brine_tds = _f(br_s.tds_mgL, _f(getattr(current_feed, "tds_mgL", None)))
 
-        # ---------------------------------------------------------
-        # ✅ batchcycle KPI (UF/MF filtration cycle, minutes)
-        # - 가장 마지막 UF/MF stage의 filtration_cycle_min을 batchcycle로 export
-        # - UF/MF가 없으면 None
-        # ---------------------------------------------------------
         batchcycle = None
-        try:
-            for st in reversed(request.stages or []):
-                if getattr(st, "module_type", None) in (ModuleType.UF, ModuleType.MF):
-                    batchcycle = _to_float_opt(
-                        getattr(st, "filtration_cycle_min", None)
-                    )
-                    break
-        except Exception:
-            batchcycle = None
+        for st in reversed(request.stages or []):
+            if getattr(st, "module_type", None) in (ModuleType.UF, ModuleType.MF):
+                batchcycle = _to_float_opt(getattr(st, "filtration_cycle_min", None))
+                break
+
+        # [WAVE FIX] Mass Balance (Flow Closure / Salt Closure)
+        mass_balance = self._calc_mass_balance(
+            feed_flow, feed_tds, prod_flow, prod_tds, brine_flow, brine_tds
+        )
 
         final_kpi = KPIOut(
             recovery_pct=_r(sys_recovery, 2),
@@ -374,31 +324,43 @@ class SimulationEngine:
             prod_tds=_r(prod_tds, 2),
             feed_m3h=feed_flow,
             permeate_m3h=_r(prod_flow, 6),
+            batchcycle=batchcycle,
+            mass_balance=mass_balance,
         )
 
         streams = [
             StreamOut(
                 label="Feed",
                 flow_m3h=feed_flow,
-                tds_mgL=_f(request.feed.tds_mgL),
+                tds_mgL=feed_tds,
                 ph=_f(request.feed.ph),
                 pressure_bar=_f(getattr(request.feed, "pressure_bar", 0.0)),
             ),
             StreamOut(
                 label="Product",
-                flow_m3h=_f(prod_flow),
-                tds_mgL=_f(prod_tds),
+                flow_m3h=_r(prod_flow, 2),
+                tds_mgL=_r(prod_tds, 2),
                 ph=_f(request.feed.ph),
                 pressure_bar=0.0,
             ),
             StreamOut(
                 label="Brine",
-                flow_m3h=_f(brine_flow),
-                tds_mgL=_f(brine_tds),
+                flow_m3h=_r(brine_flow, 2),
+                tds_mgL=_r(brine_tds, 2),
                 ph=_f(request.feed.ph),
                 pressure_bar=0.0,
             ),
         ]
+
+        # ---------------------------------------------------------
+        # 2. Extract System Warnings
+        # ---------------------------------------------------------
+        system_warnings = self._extract_warnings(stage_metrics)
+
+        # ---------------------------------------------------------
+        # 3. Calculate Advanced Chemistry (Scaling for Brine)
+        # ---------------------------------------------------------
+        sys_chemistry = self._calc_system_chemistry(request, brine_tds)
 
         return ScenarioOutput(
             scenario_id=request.simulation_id or str(UUID(int=0)),
@@ -408,8 +370,105 @@ class SimulationEngine:
             time_history=next(
                 (m.time_history for m in stage_metrics if m.time_history), None
             ),
-            chemistry=self._get_chemistry(request.feed),
+            chemistry=sys_chemistry,
+            warnings=system_warnings,
         )
+
+    # =========================================================================
+    # Helpers
+    # =========================================================================
+    def _calc_mass_balance(
+        self, qf: float, cf: float, qp: float, cp: float, qb: float, cb: float
+    ) -> MassBalanceOut:
+        """WAVE 리포트의 FLOW CLOSURE 및 SALT CLOSURE 블록 생성"""
+        flow_err = qf - (qp + qb)
+        # (m3/h * mg/L) = (g/h). To get kg/h, divide by 1000.
+        salt_err_g = (qf * cf) - ((qp * cp) + (qb * cb))
+
+        flow_err_pct = (flow_err / qf * 100.0) if qf > 0 else 0.0
+        salt_err_pct = (salt_err_g / (qf * cf) * 100.0) if (qf * cf) > 0 else 0.0
+        rej = ((1.0 - cp / cf) * 100.0) if cf > 0 else 0.0
+
+        return MassBalanceOut(
+            flow_error_m3h=round(flow_err, 4),
+            flow_error_pct=round(flow_err_pct, 2),
+            salt_error_kgh=round(salt_err_g / 1000.0, 4),
+            salt_error_pct=round(salt_err_pct, 2),
+            system_rejection_pct=round(rej, 2),
+            is_balanced=abs(flow_err_pct) < 1.0 and abs(salt_err_pct) < 5.0,
+        )
+
+    def _extract_warnings(self, metrics: List[StageMetric]) -> List[SimulationWarning]:
+        """각 스테이지의 Chemistry/가이드라인 위반 사항을 System Warning으로 롤업"""
+        warnings = []
+        for m in metrics:
+            chem = _get_chem_dict(m)
+            if chem and "violations" in chem:
+                for v in chem["violations"]:
+                    warnings.append(
+                        SimulationWarning(
+                            stage=f"Stage {m.stage}",
+                            module_type=m.module_type,
+                            key=v.get("key", "unknown"),
+                            message=v.get("message", ""),
+                            value=v.get("value"),
+                            limit=v.get("limit"),
+                            unit=v.get("unit", ""),
+                        )
+                    )
+        return warnings
+
+    def _build_base_chem_profile(self, feed: FeedInput, ions: Any = None) -> Any:
+        if not HAS_CHEMISTRY:
+            return None
+        prof = ChemistryProfile(
+            tds_mgL=_f(feed.tds_mgL),
+            temperature_C=_f(feed.temperature_C),
+            ph=_f(feed.ph),
+        )
+        if ions:
+            prof.na_mgL = _to_float_opt(getattr(ions, "Na", None))
+            prof.k_mgL = _to_float_opt(getattr(ions, "K", None))
+            prof.ca_mgL = _to_float_opt(getattr(ions, "Ca", None))
+            prof.mg_mgL = _to_float_opt(getattr(ions, "Mg", None))
+            prof.nh4_mgL = _to_float_opt(getattr(ions, "NH4", None))
+            prof.ba_mgL = _to_float_opt(getattr(ions, "Ba", None))
+            prof.sr_mgL = _to_float_opt(getattr(ions, "Sr", None))
+            prof.fe_mgL = _to_float_opt(getattr(ions, "Fe", None))
+            prof.mn_mgL = _to_float_opt(getattr(ions, "Mn", None))
+            prof.al_mgL = _to_float_opt(getattr(ions, "Al", None))
+
+            prof.cl_mgL = _to_float_opt(getattr(ions, "Cl", None))
+            prof.so4_mgL = _to_float_opt(getattr(ions, "SO4", None))
+            prof.hco3_mgL = _to_float_opt(getattr(ions, "HCO3", None))
+            prof.no3_mgL = _to_float_opt(getattr(ions, "NO3", None))
+            prof.f_mgL = _to_float_opt(getattr(ions, "F", None))
+
+            prof.sio2_mgL = _to_float_opt(getattr(ions, "SiO2", None))
+            prof.b_mgL = _to_float_opt(getattr(ions, "B", None))
+        return prof
+
+    def _calc_system_chemistry(
+        self, request: SimulationRequest, final_brine_tds: float
+    ) -> Optional[WaterChemistryOut]:
+        """Feed 이온 데이터를 바탕으로 Feed 및 Final Brine의 스케일링 지수를 예측합니다."""
+        if not HAS_CHEMISTRY:
+            return None
+        try:
+            feed_prof = self._build_base_chem_profile(request.feed, request.ions)
+
+            # 1. Feed 원수 스케일링
+            feed_scaling = calc_scaling_indices(feed_prof)
+
+            # 2. Final Brine 농축수 스케일링 (WAVE 리포트 핵심 파트)
+            # Brine TDS에 맞춰 Feed의 모든 이온을 비례 농축시킵니다.
+            brine_prof = scale_profile_for_tds(feed_prof, final_brine_tds)
+            brine_scaling = calc_scaling_indices(brine_prof)
+
+            return WaterChemistryOut(feed=feed_scaling, final_brine=brine_scaling)
+        except Exception as e:
+            logger.error(f"Failed to calculate system chemistry: {e}")
+            return None
 
     def _aggregate_system_product(
         self,
@@ -419,19 +478,6 @@ class SimulationEngine:
         resolved_streams: List[Dict[str, _ResolvedStream]],
         feed: FeedInput,
     ) -> Tuple[float, float, float, float]:
-        """
-        시스템 Product 정의(정석, 모듈 타입 기반):
-
-        1) pressure membrane(RO/NF/HRRO)가 하나라도 있으면:
-           - product = pressure membrane stage들의 export product stream 합
-           - prod_tds = Σ(Q*tds)/Σ(Q) (tds=None인 stage는 tds 가중에서 제외)
-             * 모든 tds가 None이면 prod_tds=0.0 (HRRO excel_only + cp_mode=none 유지)
-           - avg_flux/avg_ndp도 product flow 가중 (값이 None인 stage는 제외)
-
-        2) pressure membrane이 하나도 없으면(UF/MF only):
-           - product = 마지막 stage export product stream
-           - prod_tds: 해당 stream tds가 None이면 feed.tds로 fallback
-        """
         if not stage_metrics:
             return 0.0, 0.0, 0.0, 0.0
 
@@ -441,16 +487,9 @@ class SimulationEngine:
         has_pressure = len(pressure_idxs) > 0
 
         if has_pressure:
-            prod_flow = 0.0
-
-            tds_w_sum = 0.0
-            tds_w_flow = 0.0
-
-            flux_w_sum = 0.0
-            flux_w_flow = 0.0
-
-            ndp_w_sum = 0.0
-            ndp_w_flow = 0.0
+            prod_flow, tds_w_sum, tds_w_flow = 0.0, 0.0, 0.0
+            flux_w_sum, flux_w_flow = 0.0, 0.0
+            ndp_w_sum, ndp_w_flow = 0.0, 0.0
 
             for i in pressure_idxs:
                 t = stage_types[i]
@@ -497,23 +536,9 @@ class SimulationEngine:
     def _calc_power(
         self, flow_m3h: float, pressure_bar: float, eff: float = 0.8
     ) -> float:
-        """펌프 동력(kW) = (Q[m3/h] * P[bar]) / 36 / eff"""
         q = _f(flow_m3h)
         p = _f(pressure_bar)
         e = _f(eff, 0.8)
         if q <= 0 or p <= 0 or e <= 1e-9:
             return 0.0
         return (q * p) / 36.0 / e
-
-    def _get_chemistry(self, feed: FeedInput) -> Optional[WaterChemistryOut]:
-        if not HAS_CHEMISTRY:
-            return None
-        try:
-            prof = ChemistryProfile(
-                tds_mgL=_f(feed.tds_mgL),
-                temperature_C=_f(feed.temperature_C),
-                ph=_f(feed.ph),
-            )
-            return WaterChemistryOut(feed=calc_scaling_indices(prof))
-        except Exception:
-            return None
