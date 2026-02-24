@@ -77,83 +77,87 @@ export function StageWaterQualityPanel({
     UF: rows.some((r) => r.grossQ != null || r.netRec != null),
   };
 
+  // ✅ 종이 출력(A4)에 맞게 공간을 최대한 절약하는 커스텀 클래스
+  const tightTh = `${THEME.TH} !px-1.5 !py-1 text-[8px] tracking-tighter text-center whitespace-pre-wrap break-keep leading-tight align-bottom`;
+  const tightTd = `${THEME.TD} !px-1.5 !py-1.5 text-[8.5px] tracking-tighter text-center break-keep`;
+  const tightTdLabel = `${THEME.TD_LABEL} !px-1.5 !py-1.5 text-[8.5px] tracking-tighter text-center whitespace-nowrap`;
+
   return (
     <div className={THEME.TABLE_WRAP}>
-      <div className="overflow-x-auto">
-        <table className={THEME.TABLE}>
-          <thead>
-            <tr>
-              <th className={THEME.TH}>Stage</th>
-              <th className={THEME.TH}>Type</th>
+      {/* 가로 스크롤 제거 및 테이블 100% 채우기 */}
+      <table className={`${THEME.TABLE} table-fixed`}>
+        <thead>
+          <tr>
+            <th className={tightTh}>Stage</th>
+            <th className={tightTh}>Type</th>
 
-              {has.Qf && <th className={THEME.TH}>{`Qf (${u.flow})`}</th>}
-              {has.Cf && <th className={THEME.TH}>Cf (mg/L)</th>}
+            {has.Qf && <th className={tightTh}>{`Qf\n(${u.flow})`}</th>}
+            {has.Cf && <th className={tightTh}>{`Cf\n(mg/L)`}</th>}
 
-              {/* UF가 있을 때만 보이는 Gross Flow 헤더 */}
-              {has.UF && <th className={THEME.TH}>{`Gross Q (${u.flow})`}</th>}
+            {/* UF가 있을 때만 보이는 Gross Flow 헤더 */}
+            {has.UF && <th className={tightTh}>{`Gross Q\n(${u.flow})`}</th>}
 
-              <th className={THEME.TH}>
-                {has.UF ? `Net Qp (${u.flow})` : `Qp (${u.flow})`}
-              </th>
-              <th className={THEME.TH}>Cp (mg/L)</th>
+            <th className={tightTh}>
+              {has.UF ? `Net Qp\n(${u.flow})` : `Qp\n(${u.flow})`}
+            </th>
+            <th className={tightTh}>{`Cp\n(mg/L)`}</th>
 
-              {has.Qc && <th className={THEME.TH}>{`Qc (${u.flow})`}</th>}
+            {has.Qc && <th className={tightTh}>{`Qc\n(${u.flow})`}</th>}
 
-              {/* UF가 있을 때만 보이는 역세척 손실 헤더 */}
-              {has.UF && <th className={THEME.TH}>{`BW Loss (${u.flow})`}</th>}
+            {/* UF가 있을 때만 보이는 역세척 손실 헤더 */}
+            {has.UF && <th className={tightTh}>{`BW Loss\n(${u.flow})`}</th>}
 
-              {has.Cc && <th className={THEME.TH}>Cc (mg/L)</th>}
-              {has.dP && <th className={THEME.TH}>{`ΔP (${u.pressure})`}</th>}
+            {has.Cc && <th className={tightTh}>{`Cc\n(mg/L)`}</th>}
+            {has.dP && <th className={tightTh}>{`ΔP\n(${u.pressure})`}</th>}
 
-              <th className={THEME.TH}>
-                {has.UF ? 'Gross Rec (%)' : 'Recovery (%)'}
-              </th>
+            <th className={tightTh}>
+              {has.UF ? `Gross Rec\n(%)` : `Recovery\n(%)`}
+            </th>
 
-              {/* UF가 있을 때만 보이는 순 회수율 헤더 */}
-              {has.UF && <th className={THEME.TH}>Net Rec (%)</th>}
+            {/* UF가 있을 때만 보이는 순 회수율 헤더 */}
+            {has.UF && <th className={tightTh}>{`Net Rec\n(%)`}</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className={THEME.TR}>
+              <td className={tightTdLabel}>{`Stage ${r.stage}`}</td>
+              <td className={tightTd}>{String(r.type)}</td>
+
+              {has.Qf && <td className={tightTd}>{fmt(r.Qf)}</td>}
+              {has.Cf && <td className={tightTd}>{fmt(r.Cf)}</td>}
+
+              {has.UF && (
+                <td className={tightTd}>
+                  {r.grossQ != null ? fmt(r.grossQ) : '-'}
+                </td>
+              )}
+
+              <td className={tightTd}>{fmt(r.Qp)}</td>
+              <td className={tightTd}>{fmt(r.Cp)}</td>
+
+              {has.Qc && <td className={tightTd}>{fmt(r.Qc)}</td>}
+
+              {has.UF && (
+                <td className={tightTd}>
+                  {r.bwLoss != null ? fmt(r.bwLoss) : '-'}
+                </td>
+              )}
+
+              {has.Cc && <td className={tightTd}>{fmt(r.Cc)}</td>}
+              {has.dP && <td className={tightTd}>{fmt(r.dP)}</td>}
+
+              <td className={tightTd}>{r.rec == null ? '-' : pct(r.rec)}</td>
+
+              {has.UF && (
+                <td className={tightTd}>
+                  {r.netRec == null ? '-' : pct(r.netRec)}
+                </td>
+              )}
             </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i} className={THEME.TR}>
-                <td className={THEME.TD_LABEL}>{`Stage ${r.stage}`}</td>
-                <td className={THEME.TD}>{String(r.type)}</td>
-
-                {has.Qf && <td className={THEME.TD}>{fmt(r.Qf)}</td>}
-                {has.Cf && <td className={THEME.TD}>{fmt(r.Cf)}</td>}
-
-                {has.UF && (
-                  <td className={THEME.TD}>
-                    {r.grossQ != null ? fmt(r.grossQ) : '-'}
-                  </td>
-                )}
-
-                <td className={THEME.TD}>{fmt(r.Qp)}</td>
-                <td className={THEME.TD}>{fmt(r.Cp)}</td>
-
-                {has.Qc && <td className={THEME.TD}>{fmt(r.Qc)}</td>}
-
-                {has.UF && (
-                  <td className={THEME.TD}>
-                    {r.bwLoss != null ? fmt(r.bwLoss) : '-'}
-                  </td>
-                )}
-
-                {has.Cc && <td className={THEME.TD}>{fmt(r.Cc)}</td>}
-                {has.dP && <td className={THEME.TD}>{fmt(r.dP)}</td>}
-
-                <td className={THEME.TD}>{r.rec == null ? '-' : pct(r.rec)}</td>
-
-                {has.UF && (
-                  <td className={THEME.TD}>
-                    {r.netRec == null ? '-' : pct(r.netRec)}
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
 
       <div className="px-3 py-2 text-[10px] text-slate-500 bg-white border-t border-slate-200">
         * UF 스테이지가 포함된 경우, 순수 생산량(Net Qp), 세정 손실량(BW Loss),

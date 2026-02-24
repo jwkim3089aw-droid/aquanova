@@ -89,13 +89,8 @@ async function copyTextToClipboard(text: string) {
   if (!ok) throw new Error('copy failed');
 }
 
-/**
- * A4 (screen) 크기 기준값
- * - 브라우저에서 mm 단위는 환경에 따라 미세하게 흔들릴 수 있어 screen에서는 px로 고정
- * - print에서는 210mm/297mm 그대로 사용 (css @media print)
- */
-const A4_W_PX = 794; // 210mm @ 96dpi 근사
-const A4_MIN_H_PX = 1123; // 297mm @ 96dpi 근사
+const A4_W_PX = 794;
+const A4_MIN_H_PX = 1123;
 
 export default function Reports() {
   const location = useLocation();
@@ -115,10 +110,7 @@ export default function Reports() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // ✅ 줌은 화면(px) 기준 Paper를 스케일링(스크롤 안정)
   const [zoom, setZoom] = useState(1.0);
-
-  // ✅ RAW(pre) 같은 긴 디버그 블록은 기본적으로 접어서 깔끔하게
   const [compact, setCompact] = useState(true);
 
   const [reportTitle, setReportTitle] = useState(
@@ -131,7 +123,6 @@ export default function Reports() {
 
   const didLogRef = useRef(false);
 
-  // ----- normalize report data -----
   const reportData = useMemo(() => {
     if (!receivedData) return null;
     const d: any = receivedData ?? {};
@@ -175,7 +166,6 @@ export default function Reports() {
     console.log('REPORT_DATA', reportData);
   }, [reportData]);
 
-  // ----- zoom -----
   const handleZoom = (delta: number) =>
     setZoom((p) => Math.max(0.6, Math.min(p + delta, 1.6)));
 
@@ -196,7 +186,6 @@ export default function Reports() {
     }
   };
 
-  // ----- loader: when only scenario_id is provided -----
   useEffect(() => {
     if (receivedDataFromState) return;
     if (!scenarioId) return;
@@ -311,7 +300,6 @@ export default function Reports() {
     };
   }, [scenarioId, receivedDataFromState, meta?.projectName]);
 
-  // ----- guards -----
   if (!reportData && !scenarioId) {
     return (
       <div className="flex h-screen items-center justify-center bg-zinc-100 flex-col gap-4">
@@ -380,15 +368,13 @@ export default function Reports() {
     );
   }
 
-  // ----- 정상 렌더 -----
   const paperW = Math.round(A4_W_PX * zoom);
   const paperMinH = Math.round(A4_MIN_H_PX * zoom);
 
   return (
     <div className="flex h-screen bg-[#525659] font-sans text-slate-900 overflow-hidden print:bg-white print:h-auto print:overflow-visible">
-      {/* ✅ Screen에서만 content를 더 보기 좋게 정리하는 CSS 오버라이드 */}
+      {/* ✅ 추가/수정: Print 최적화 CSS */}
       <style>{`
-        /* 리포트 내부의 긴 pre(디버그 덩어리)는 'compact'일 때 접기 */
         #report-viewer-content.compact pre {
           max-height: 220px;
           overflow: auto;
@@ -405,8 +391,6 @@ export default function Reports() {
           color: #64748b;
           margin-bottom: 8px;
         }
-
-        /* 표가 화면에서 깨져 보이지 않게 */
         #report-viewer-content table {
           width: 100%;
           border-collapse: collapse;
@@ -414,8 +398,6 @@ export default function Reports() {
         #report-viewer-content th, #report-viewer-content td {
           word-break: break-word;
         }
-
-        /* 화면에서 paper 느낌 */
         .paper {
           background: #fff;
           border-radius: 12px;
@@ -423,16 +405,44 @@ export default function Reports() {
           border: 1px solid rgba(15, 23, 42, 0.12);
         }
 
+        /* ✅ 핵심: 인쇄 전용 CSS (Zoom 무시, 배경색 강제, 여백 제어) */
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 0;
+          }
+          body {
+            margin: 0;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
           .paper {
             box-shadow: none !important;
             border: none !important;
             border-radius: 0 !important;
           }
+
+          /* 요소 분할 방지 */
+          table, tr, td, th, img, svg, canvas, pre, .section-wrapper {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          h1, h2, h3, h4, h5 {
+            page-break-after: avoid;
+            break-after: avoid;
+          }
+
+          /* Zoom 인라인 스타일 강제 무력화 */
+          #report-viewer-content {
+            transform: none !important;
+            width: 100% !important;
+            min-height: auto !important;
+            margin: 0 !important;
+          }
         }
       `}</style>
 
-      {/* LEFT SIDEBAR (테마 유지) */}
+      {/* LEFT SIDEBAR */}
       <div className="w-64 bg-white border-r border-slate-300 flex flex-col z-20 print:hidden shadow-xl">
         <div className="h-14 flex items-center px-4 border-b border-slate-200 bg-slate-50 gap-2">
           <button
@@ -451,13 +461,11 @@ export default function Reports() {
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
             Structure
           </div>
-
           <div className="space-y-1">
             <button className="w-full text-left px-3 py-2 rounded bg-blue-50 text-blue-700 text-xs font-bold border border-blue-100">
               1. Main Report
             </button>
           </div>
-
           <div className="mt-4 text-[11px] text-slate-500 leading-relaxed">
             • PDF는 화면 렌더링 기반으로 생성됩니다.
             <br />• Copy는 리포트의 <b>텍스트</b>만 복사합니다(차트 제외).
@@ -467,7 +475,7 @@ export default function Reports() {
 
       {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* TOP TOOLBAR (테마 유지 + Compact/Copy 추가) */}
+        {/* TOP TOOLBAR */}
         <div className="h-14 bg-white border-b border-zinc-300 px-6 flex items-center justify-between shadow-sm z-10 print:hidden">
           <div className="flex items-center gap-3">
             <input
@@ -555,13 +563,11 @@ export default function Reports() {
           </div>
         </div>
 
-        {/* VIEWER (✅ 스크롤 OK: 세로 + 줌 시 가로도 자연스럽게) */}
+        {/* VIEWER */}
         <div className="flex-1 overflow-auto bg-[#525659] p-8 print:p-0 print:m-0">
           <div className="min-w-max flex justify-center">
-            {/* 줌은 wrapper의 실제 크기를 바꿔서 스크롤이 '정상' 동작 */}
             <div style={{ width: paperW, minHeight: paperMinH }}>
               <div className="paper">
-                {/* screen(px) 기준 안정 wrapper + print(mm) 기준 wrapper */}
                 <div
                   id="report-viewer-content"
                   className={`${compact ? 'compact' : ''} flex flex-col gap-8`}
@@ -572,7 +578,6 @@ export default function Reports() {
                     transformOrigin: 'top left',
                   }}
                 >
-                  {/* print에서는 mm로 */}
                   <div className="print:w-[210mm] print:min-h-[297mm]">
                     <ReportTemplate
                       data={reportData}
@@ -582,7 +587,6 @@ export default function Reports() {
                   </div>
                 </div>
               </div>
-
               <div className="h-12 print:hidden" />
             </div>
           </div>

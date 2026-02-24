@@ -174,7 +174,15 @@ ui\src\features\simulation\components\UnitInspectorModal.tsx
 ui\src\features\simulation\data\membrane_catalog.ts
 ui\src\features\simulation\data\water_catalog.ts
 ui\src\features\simulation\editors\GlobalEditors.tsx
-ui\src\features\simulation\editors\UnitForms.tsx
+ui\src\features\simulation\editors\UnitForms\HRROEditor.tsx
+ui\src\features\simulation\editors\UnitForms\MFEditor.tsx
+ui\src\features\simulation\editors\UnitForms\NFEditor.tsx
+ui\src\features\simulation\editors\UnitForms\PumpEditor.tsx
+ui\src\features\simulation\editors\UnitForms\PumpSection.tsx
+ui\src\features\simulation\editors\UnitForms\ROEditor.tsx
+ui\src\features\simulation\editors\UnitForms\UFEditor.tsx
+ui\src\features\simulation\editors\UnitForms\index.ts
+ui\src\features\simulation\editors\UnitForms\utils.ts
 ui\src\features\simulation\hooks\useBlockDeleteKeysWhenOpen.ts
 ui\src\features\simulation\hooks\useChargeBalanceActions.ts
 ui\src\features\simulation\hooks\useFeedChargeBalance.ts
