@@ -8,10 +8,14 @@
 # - Maintain backward compatibility with broad alias support.
 # - [WAVE MATCHING] Expanded to hold detailed Chemistry, Mass Balance, and Warnings
 # - [CLEANUP] Removed all Legacy Excel-engine parameters. Pure Python physics only.
+# - [UF PATCH] Integrated WAVE-level Ultrafiltration parameters and metrics.
+# - [WAVE FEED PATCH] Refactored FeedInput to encapsulate Ions, Fouling, and Water Type.
+# - [MULTI-STAGE PATCH] Added ISBP and stage index for RO/NF multi-stage support.
 # =============================================================================
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Dict, List, Optional, Union, Literal
 from uuid import UUID
 
@@ -46,12 +50,14 @@ def _norm_upper(s: Any) -> Any:
 # =============================================================================
 # Default Constants (Industry Standards)
 # =============================================================================
-# 🛑 WAVE와 완벽히 일치하는 40.9로 고정!
 DEFAULT_AREA_M2_PER_ELEMENT_8IN = 40.9
 DEFAULT_AREA_M2_PER_ELEMENT_4IN = 20.0
+DEFAULT_UF_AREA_M2 = 77.0  # 예: SFP-2860XP 기본값
 
 
-def _default_area_by_inch(element_inch: int) -> float:
+def _default_area_by_type(module_type: ModuleType, element_inch: int = 8) -> float:
+    if module_type == ModuleType.UF:
+        return float(DEFAULT_UF_AREA_M2)
     inch = int(element_inch or 8)
     if inch <= 4:
         return float(DEFAULT_AREA_M2_PER_ELEMENT_4IN)
@@ -59,7 +65,7 @@ def _default_area_by_inch(element_inch: int) -> float:
 
 
 # =============================================================================
-# Sub-Models: Physics & Geometry
+# Sub-Models: Physics & Geometry & Chemistry
 # =============================================================================
 class HRROMassTransferIn(AppBaseModel):
     @model_validator(mode="before")
@@ -69,21 +75,17 @@ class HRROMassTransferIn(AppBaseModel):
 
     crossflow_velocity_m_s: Optional[float] = None
     recirc_flow_m3h: Optional[float] = None
-
     feed_channel_area_m2: Optional[float] = Field(
         0.015, description="Cross-sectional flow area per element"
     )
-
     rho_kg_m3: float = 998.0
     mu_pa_s: float = 0.001
-
-    diffusivity_m2_s: float = 1.5e-9
+    diffuser_m2_s: float = 1.5e-9
     cp_exp_max: float = 5.0
     cp_rel_tol: float = 1e-4
     cp_abs_tol_lmh: float = 1e-3
     cp_relax: float = 0.5
     cp_max_iter: int = 30
-
     k_mt_multiplier: Optional[float] = None
     k_mt_min_m_s: Optional[float] = None
     segments_total: Optional[int] = None
@@ -98,7 +100,6 @@ class HRROSpacerIn(AppBaseModel):
     thickness_mm: float = Field(0.76, description="Spacer thickness (mil converted)")
     filament_diameter_mm: float = Field(0.35, description="Mesh filament diameter")
     mesh_size_mm: Optional[float] = None
-
     voidage: Optional[float] = Field(0.85, description="Porosity (Void fraction)")
     voidage_fallback: float = 0.85
     hydraulic_diameter_m: Optional[float] = None
@@ -110,7 +111,6 @@ class IonCompositionInput(AppBaseModel):
     def _strip_nulls(cls, data: Any) -> Any:
         return _drop_none_recursive(data) if isinstance(data, dict) else data
 
-    # Cations (WAVE Order)
     NH4: Optional[float] = Field(
         default=None, validation_alias=AliasChoices("NH4", "nh4")
     )
@@ -120,13 +120,9 @@ class IonCompositionInput(AppBaseModel):
     Ca: Optional[float] = Field(default=None, validation_alias=AliasChoices("Ca", "ca"))
     Sr: Optional[float] = Field(default=None, validation_alias=AliasChoices("Sr", "sr"))
     Ba: Optional[float] = Field(default=None, validation_alias=AliasChoices("Ba", "ba"))
-
-    # Non-WAVE default cations (Kept for compatibility)
     Fe: Optional[float] = Field(default=None, validation_alias=AliasChoices("Fe", "fe"))
     Mn: Optional[float] = Field(default=None, validation_alias=AliasChoices("Mn", "mn"))
     Al: Optional[float] = Field(default=None, validation_alias=AliasChoices("Al", "al"))
-
-    # Anions (WAVE Order)
     CO3: Optional[float] = Field(
         default=None, validation_alias=AliasChoices("CO3", "co3")
     )
@@ -145,8 +141,6 @@ class IonCompositionInput(AppBaseModel):
     PO4: Optional[float] = Field(
         default=None, validation_alias=AliasChoices("PO4", "po4")
     )
-
-    # Neutrals (WAVE Order)
     SiO2: Optional[float] = Field(
         default=None, validation_alias=AliasChoices("SiO2", "sio2")
     )
@@ -156,8 +150,6 @@ class IonCompositionInput(AppBaseModel):
     CO2: Optional[float] = Field(
         default=None, validation_alias=AliasChoices("CO2", "co2")
     )
-
-    # Legacy
     HCO2: Optional[float] = Field(
         default=None, validation_alias=AliasChoices("HCO2", "hco2")
     )
@@ -166,9 +158,71 @@ class IonCompositionInput(AppBaseModel):
     )
 
 
-# =============================================================================
-# Main Input Models
-# =============================================================================
+class UFMaintenanceConfig(AppBaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_nulls(cls, data: Any) -> Any:
+        return _drop_none_recursive(data) if isinstance(data, dict) else data
+
+    filtration_duration_min: float = Field(default=60.0, ge=1)
+    acid_ceb_interval_h: float = Field(default=0.0, ge=0)
+    alkali_ceb_interval_h: float = Field(default=0.0, ge=0)
+    cip_interval_d: float = Field(default=0.0, ge=0)
+    mini_cip_interval_d: float = Field(default=0.0, ge=0)
+    backwash_duration_sec: float = Field(default=60.0, ge=0)
+    air_scour_duration_sec: float = Field(default=30.0, ge=0)
+    forward_flush_duration_sec: float = Field(default=30.0, ge=0)
+    backwash_flux_lmh: float = Field(default=100.0, ge=0)
+    ceb_flux_lmh: float = Field(default=80.0, ge=0)
+    forward_flush_flow_m3h_per_mod: float = Field(default=2.83, ge=0)
+    air_flow_nm3h_per_mod: float = Field(default=12.0, ge=0)
+    integrity_test_min_day: float = Field(
+        default=0.0, ge=0, description="Offline Time per Train"
+    )
+
+
+class WAVEWaterType(str, Enum):
+    WELL_WATER = "RO/NF Well Water"
+    SURFACE_WATER = "RO/NF Surface Water"
+    SEAWATER_OPEN = "SD Seawater (Open Intake)"
+    SEAWATER_WELL = "SD Seawater (Well)"
+    WASTEWATER = "WW Wastewater"
+    CITY_WATER = "City Water"
+
+
+class FoulingIndicators(AppBaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_nulls(cls, data: Any) -> Any:
+        return _drop_none_recursive(data) if isinstance(data, dict) else data
+
+    tss_mgL: Optional[float] = Field(default=None, ge=0)
+    turbidity_ntu: Optional[float] = Field(default=None, ge=0)
+    sdi15: Optional[float] = Field(default=None, ge=0)
+    toc_mgL: Optional[float] = Field(default=None, ge=0)
+    cod_mgL: Optional[float] = Field(default=None, ge=0)
+    bod_mgL: Optional[float] = Field(default=None, ge=0)
+
+
+class FeedInput(AppBaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_nulls(cls, data: Any) -> Any:
+        return _drop_none_recursive(data) if isinstance(data, dict) else data
+
+    water_type: WAVEWaterType = Field(default=WAVEWaterType.WELL_WATER)
+    flow_m3h: float = Field(default=100.0, ge=0)
+    temperature_C: float = Field(default=25.0, ge=0, le=100)
+    temp_min_C: Optional[float] = Field(default=None, ge=0, le=100)
+    temp_max_C: Optional[float] = Field(default=None, ge=0, le=100)
+    ph: float = Field(default=7.0, ge=0, le=14)
+    pressure_bar: Optional[float] = Field(default=0.0, ge=0)
+    fouling: FoulingIndicators = Field(default_factory=FoulingIndicators)
+    ions: Optional[IonCompositionInput] = Field(default_factory=IonCompositionInput)
+    tds_mgL: float = Field(default=0.0, ge=0)
+    chemistry: Optional[Dict[str, Any]] = None
+
+
 class StageConfig(AppBaseModel):
     @model_validator(mode="before")
     @classmethod
@@ -176,20 +230,20 @@ class StageConfig(AppBaseModel):
         if not isinstance(data, dict):
             return data
         d = _drop_none_recursive(data)
-
         mt = d.get("module_type", None) or d.get("type", None)
         if isinstance(mt, str):
             d["module_type"] = _norm_upper(mt)
         return d
 
     stage_id: Optional[str] = None
+    stage_idx: Optional[int] = Field(
+        default=1, ge=1, description="스테이지 순서 (1, 2, 3...)"
+    )
     module_type: ModuleType = Field(
         default=ModuleType.RO, validation_alias=AliasChoices("type", "module_type")
     )
 
     element_inch: int = Field(default=8, ge=4, le=16)
-
-    # 🛑 [WAVE 일치화] 하드웨어 그릇 크기 동기화
     vessel_count: int = Field(default=10, ge=1)
     elements_per_vessel: int = Field(default=5, ge=1)
     elements: int = Field(
@@ -199,23 +253,31 @@ class StageConfig(AppBaseModel):
     )
 
     membrane_model: Optional[str] = Field(default="FilmTec SOAR 6000i")
-    membrane_area_m2: Optional[float] = Field(default=40.9, ge=0)
+    membrane_area_m2: Optional[float] = Field(default=None, ge=0)
     membrane_A_lmh_bar: Optional[float] = Field(default=6.35)
     membrane_B_lmh: Optional[float] = Field(default=0.058)
     membrane_salt_rejection_pct: Optional[float] = Field(default=99.5)
 
     flow_factor: float = Field(default=0.85, ge=0.1, le=2.0)
+    spi: float = Field(default=1.0, ge=1.0, description="Salt Passage Increase")
 
-    # [WAVE 일치화] 새로 추가된 핵심 파라미터 3종
-    temp_mode: Literal["Minimum", "Design", "Maximum"] = Field(
-        default="Design", description="선택된 온도 시나리오"
-    )
-    bypass_flow_m3h: float = Field(
-        default=0.0, ge=0, description="RO를 거치지 않는 바이패스 유량"
-    )
+    strainer_recovery_pct: float = Field(default=99.5, ge=0, le=100)
+    strainer_size_micron: float = Field(default=150.0, ge=0)
+
+    temp_mode: Literal["Minimum", "Design", "Maximum"] = Field(default="Design")
+    bypass_flow_m3h: float = Field(default=0.0, ge=0)
+
+    # 🛑 [MULTI-STAGE PATCH] Hydraulics & ISBP
     pre_stage_dp_bar: float = Field(
-        default=0.31, ge=0, description="스테이지 진입 전 배관 압력 손실"
+        default=0.31, ge=0, description="단 진입 전 배관 마찰 손실"
     )
+    isbp_pressure_bar: float = Field(
+        default=0.0, ge=0, description="단간 부스터 펌프 승압"
+    )
+    isbp_eff_pct: float = Field(
+        default=80.0, ge=0, le=100, description="단간 부스터 펌프 효율"
+    )
+    permeate_back_pressure_bar: float = Field(default=0.0, ge=0)
 
     feed_flow_m3h: Optional[float] = Field(
         default=None, ge=0, validation_alias=AliasChoices("feed_flow_m3h", "q_raw_m3h")
@@ -223,24 +285,26 @@ class StageConfig(AppBaseModel):
     recovery_target_pct: Optional[float] = Field(default=90.0, ge=0, le=100)
     pressure_bar: Optional[float] = Field(default=None, ge=0)
     dp_module_bar: Optional[float] = Field(0.2, ge=0)
-    permeate_back_pressure_bar: float = Field(default=0.0, ge=0)
     burst_pressure_limit_bar: float = Field(default=83.0, ge=0)
+
     flux_lmh: Optional[float] = None
+    design_flux_lmh: Optional[float] = Field(
+        default=None, ge=0, description="Target Filtrate Flux (UF)"
+    )
 
     loop_volume_m3: Optional[float] = Field(default=2.0)
     recirc_flow_m3h: Optional[float] = Field(default=120.0, ge=0)
-
     max_minutes: float = Field(default=60.0)
     stop_recovery_pct: Optional[float] = Field(default=90.0)
     stop_permeate_tds_mgL: Optional[float] = None
 
-    # 🛑 [WAVE 일치화] 농축수 순환 유량 기본값(4.33) 세팅
     cc_recycle_m3h_per_pv: Optional[float] = Field(
         default=4.33,
         ge=0,
         validation_alias=AliasChoices("cc_recycle_m3h_per_pv", "cc_recycle_m3h"),
     )
 
+    uf_maintenance: UFMaintenanceConfig = Field(default_factory=UFMaintenanceConfig)
     spacer: Optional[HRROSpacerIn] = None
     mass_transfer: Optional[HRROMassTransferIn] = None
     chemistry: Optional[Dict[str, Any]] = None
@@ -269,7 +333,6 @@ class StageConfig(AppBaseModel):
             "membrane_area_m2_per_element", "area_m2_per_element"
         ),
     )
-
     pf_feed_ratio_pct: float = Field(default=110.0, ge=0)
     pf_recovery_pct: float = Field(default=10.0, ge=0)
     ccro_recovery_pct: Optional[float] = None
@@ -282,55 +345,20 @@ class StageConfig(AppBaseModel):
             epv = getattr(self, "elements_per_vessel", 5)
             self.elements = int(vc) * int(epv)
 
-        inch = getattr(self, "element_inch", 8)
-        default_area = _default_area_by_inch(inch)
-        m_area = getattr(self, "membrane_area_m2", None)
-        if m_area is None or float(m_area) <= 0.0:
-            self.membrane_area_m2 = float(default_area)
+        if self.membrane_area_m2 is None or float(self.membrane_area_m2) <= 0.0:
+            self.membrane_area_m2 = _default_area_by_type(
+                self.module_type, self.element_inch
+            )
 
         if getattr(self, "module_type", None) == ModuleType.HRRO:
             per_el = getattr(self, "membrane_area_m2_per_element", None)
             if per_el is None or float(per_el) <= 0.0:
                 self.membrane_area_m2_per_element = self.membrane_area_m2
-            if getattr(self, "membrane_area_m2", None) is None:
-                self.membrane_area_m2 = float(self.membrane_area_m2_per_element)
+
+        if self.module_type == ModuleType.UF and self.design_flux_lmh is None:
+            self.design_flux_lmh = 55.5
 
         return self
-
-
-class FeedInput(AppBaseModel):
-    @model_validator(mode="before")
-    @classmethod
-    def _strip_nulls(cls, data: Any) -> Any:
-        return _drop_none_recursive(data) if isinstance(data, dict) else data
-
-    # 🛑 [WAVE 일치화] 유입 유량 기본값 세팅
-    flow_m3h: float = Field(default=100.0, ge=0, description="Feed Flow Rate")
-    tds_mgL: float = Field(default=0.0, ge=0, description="Total Dissolved Solids")
-
-    # WAVE Temperature Model
-    temperature_C: float = Field(
-        default=25.0, ge=0, le=100, description="Design Temperature"
-    )
-    temp_min_C: Optional[float] = Field(
-        default=None, ge=0, le=100, description="Minimum Temperature"
-    )
-    temp_max_C: Optional[float] = Field(
-        default=None, ge=0, le=100, description="Maximum Temperature"
-    )
-
-    ph: float = Field(default=7.0, ge=0, le=14)
-    pressure_bar: Optional[float] = Field(default=0.0, ge=0)
-
-    # WAVE Solid & Organic Content
-    water_type: Optional[FeedWaterType] = None
-    water_subtype: Optional[str] = None
-    turbidity_ntu: Optional[float] = None
-    tss_mgL: Optional[float] = None
-    sdi15: Optional[float] = None
-    toc_mgL: Optional[float] = None
-
-    chemistry: Optional[Dict[str, Any]] = None
 
 
 class WaterChemistryInput(AppBaseModel):
@@ -356,23 +384,17 @@ class SimulationRequest(AppBaseModel):
     simulation_id: str = Field(default_factory=lambda: str(UUID(int=0)))
     project_id: Union[UUID, str] = "default"
     scenario_name: str = "Simulation"
-
     feed: FeedInput
     stages: List[StageConfig]
     options: Dict[str, Any] = Field(default_factory=dict)
-
     chemistry: Optional[WaterChemistryInput] = None
-    ions: Optional[IonCompositionInput] = Field(
-        default=None,
-        validation_alias=AliasChoices("ions", "ion_composition", "ionComposition"),
-    )
 
 
 ScenarioInput = SimulationRequest
 
 
 # =============================================================================
-# Output Models: Expanded for WAVE Reporting Parity
+# Output Models: Fully Restored + WAVE UF Expansions
 # =============================================================================
 class SimulationWarning(AppBaseModel):
     stage: Optional[str] = None
@@ -422,17 +444,18 @@ class WaterChemistryOut(AppBaseModel):
 class StageMetric(AppBaseModel):
     stage: int = Field(validation_alias=AliasChoices("stage", "idx", "stage_index"))
     module_type: str = Field(validation_alias=AliasChoices("module_type", "type"))
-
     recovery_pct: Optional[float] = None
     flux_lmh: Optional[float] = Field(
         default=None,
         validation_alias=AliasChoices("flux_lmh", "jw_avg_lmh", "avg_flux_lmh"),
     )
+    design_flux_lmh: Optional[float] = None
+    instantaneous_flux_lmh: Optional[float] = None
+    average_flux_lmh: Optional[float] = None
     sec_kwhm3: Optional[float] = Field(
         default=None, validation_alias=AliasChoices("sec_kwhm3", "sec_kwh_m3")
     )
     ndp_bar: Optional[float] = None
-
     p_in_bar: Optional[float] = Field(
         default=None,
         validation_alias=AliasChoices("p_in_bar", "pin", "pin_bar", "pressure_in"),
@@ -449,7 +472,6 @@ class StageMetric(AppBaseModel):
         default=None, validation_alias=AliasChoices("tmp_bar", "TMP_bar", "tmp")
     )
     delta_pi_bar: Optional[float] = None
-
     Qf: Optional[float] = None
     Qp: Optional[float] = None
     Qc: Optional[float] = None
@@ -457,13 +479,10 @@ class StageMetric(AppBaseModel):
     net_flow_m3h: Optional[float] = None
     backwash_loss_m3h: Optional[float] = None
     net_recovery_pct: Optional[float] = None
-
     Cf: Optional[float] = None
     Cp: Optional[float] = None
     Cc: Optional[float] = None
-
     time_history: Optional[List[TimeSeriesPoint]] = None
-
     chemistry: Optional[Union[Dict[str, Any], ScalingIndexOut]] = None
     guidelines: Optional[Dict[str, Any]] = None
     warnings: Optional[List[SimulationWarning]] = None
@@ -493,18 +512,15 @@ class KPIOut(AppBaseModel):
     flux_lmh: float
     ndp_bar: float
     sec_kwhm3: float
-
     batchcycle: Optional[float] = Field(
         default=None,
         validation_alias=AliasChoices(
             "batchcycle", "batch_cycle", "batchcycle_min", "filtration_cycle_min"
         ),
     )
-
     prod_tds: Optional[float] = None
     feed_m3h: Optional[float] = None
     permeate_m3h: Optional[float] = None
-
     mass_balance: Optional[MassBalanceOut] = None
 
 
@@ -512,11 +528,9 @@ class ScenarioOutput(AppBaseModel):
     scenario_id: Union[UUID, str]
     streams: List[StreamOut]
     kpi: KPIOut
-
     stage_metrics: Optional[List[StageMetric]] = None
     unit_labels: Optional[Dict[str, str]] = None
     chemistry: Optional[WaterChemistryOut] = None
     time_history: Optional[List[TimeSeriesPoint]] = None
     warnings: Optional[List[SimulationWarning]] = None
-
     schema_version: int = 2

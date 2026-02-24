@@ -34,6 +34,8 @@ try:
         calc_scaling_indices,
         ChemistryProfile,
         scale_profile_for_tds,
+        apply_balance_makeup,  # 🛑 [WAVE PATCH] 밸런스 메이크업 엔진 임포트
+        calculate_ion_balance,  # 🛑 [WAVE PATCH] 이온 밸런스 검증 엔진 임포트
     )
 
     HAS_CHEMISTRY = True
@@ -228,6 +230,26 @@ class SimulationEngine:
                 ),
             )
 
+        # 🛑 [WAVE PATCH] 0. 이온 밸런스 검사 및 자동 보정 (Make-up) 최우선 실행!
+        # 여기서 보정된 TDS와 이온 농도가 이후 모든 물리 엔진(삼투압 계산 등)에 쓰입니다.
+        if HAS_CHEMISTRY and getattr(request.feed, "ions", None):
+            raw_prof = self._build_base_chem_profile(request.feed)
+            if raw_prof:
+                # 밸런스 자동 보정 적용 (양이온/음이온 부족분 채우기)
+                balanced_prof = apply_balance_makeup(raw_prof)
+
+                # 보정된 TDS 및 Na, Cl 데이터를 FeedInput 원본에 덮어쓰기! (엔진 전체에 전파됨)
+                request.feed.tds_mgL = balanced_prof.tds_mgL
+                request.feed.ions.Na = balanced_prof.na_mgL
+                request.feed.ions.Cl = balanced_prof.cl_mgL
+
+                # (선택) 로깅으로 밸런스 보정 결과 남기기
+                _, _, err_pct = calculate_ion_balance(raw_prof)
+                if err_pct > 1e-4:
+                    logger.info(
+                        f"[WAVE] Feed Ion Balance adjusted. Initial Error: {err_pct:.2f}%. Updated TDS: {balanced_prof.tds_mgL:.2f} mg/L"
+                    )
+
         current_feed: FeedInput = request.feed
         stage_metrics: List[StageMetric] = []
         stage_types: List[ModuleType] = []
@@ -246,7 +268,6 @@ class SimulationEngine:
             metric: StageMetric = handler.compute(stage_conf, current_feed)
             metric.stage = idx + 1
 
-            # Stage metric warnings integration could be added directly to the metric
             stage_metrics.append(metric)
             stage_types.append(module_type)
 
@@ -275,6 +296,7 @@ class SimulationEngine:
                 ph=_f(getattr(current_feed, "ph", None)),
                 pressure_bar=_f(getattr(current_feed, "pressure_bar", None)),
                 chemistry=getattr(current_feed, "chemistry", None),
+                # 다음 스테이지로 넘어갈 땐 현재 시뮬레이션에서는 이온 상세 구성까지는 넘기지 않음 (기존 구조 유지)
             )
 
         # ---------------------------------------------------------
@@ -418,7 +440,8 @@ class SimulationEngine:
                     )
         return warnings
 
-    def _build_base_chem_profile(self, feed: FeedInput, ions: Any = None) -> Any:
+    # 🛑 [WAVE PATCH] 새로운 스키마 구조(feed.ions)에 맞게 파라미터 단순화
+    def _build_base_chem_profile(self, feed: FeedInput) -> Any:
         if not HAS_CHEMISTRY:
             return None
         prof = ChemistryProfile(
@@ -426,6 +449,8 @@ class SimulationEngine:
             temperature_C=_f(feed.temperature_C),
             ph=_f(feed.ph),
         )
+
+        ions = getattr(feed, "ions", None)
         if ions:
             prof.na_mgL = _to_float_opt(getattr(ions, "Na", None))
             prof.k_mgL = _to_float_opt(getattr(ions, "K", None))
@@ -455,7 +480,8 @@ class SimulationEngine:
         if not HAS_CHEMISTRY:
             return None
         try:
-            feed_prof = self._build_base_chem_profile(request.feed, request.ions)
+            # 보정된 request.feed 데이터를 그대로 넘깁니다.
+            feed_prof = self._build_base_chem_profile(request.feed)
 
             # 1. Feed 원수 스케일링
             feed_scaling = calc_scaling_indices(feed_prof)

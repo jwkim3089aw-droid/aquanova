@@ -33,6 +33,8 @@ import {
   AlertOctagon,
   Droplet,
   FileText,
+  Scale, // 🛑 아이콘 추가
+  Beaker, // 🛑 아이콘 추가
 } from 'lucide-react';
 
 import { UnitMode, fmt, pct } from '../model/types';
@@ -74,7 +76,7 @@ const LABEL_BASE =
   'text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 mb-1';
 
 // -----------------------------------------------------------------------------
-// ResizeObserver 기반 사이즈 측정 (ResponsiveContainer 대체)
+// ResizeObserver 기반 사이즈 측정
 // -----------------------------------------------------------------------------
 function useElementSize<T extends HTMLElement>() {
   const ref = useRef<T | null>(null);
@@ -99,7 +101,6 @@ function useElementSize<T extends HTMLElement>() {
       });
     };
 
-    // 초기값
     const r = el.getBoundingClientRect();
     commit(r.width, r.height);
 
@@ -144,6 +145,7 @@ function AutoSizedChart({
   );
 }
 
+// 🛑 [WAVE PATCH] HealthCheckItem 고도화
 function HealthCheckItem({
   label,
   status,
@@ -151,38 +153,47 @@ function HealthCheckItem({
   unit,
 }: {
   label: string;
-  status: 'ok' | 'warning' | 'error';
+  status: 'ok' | 'warning' | 'error' | 'inactive';
   value?: string | number;
   unit?: string;
 }) {
   const colors = {
     ok: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-    warning: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20',
+    warning: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
     error: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
+    inactive: 'text-slate-500 bg-slate-800/30 border-slate-700/30',
   } as const;
+
   const icons = {
     ok: <CheckCircle2 className="w-3 h-3" />,
     warning: <AlertTriangle className="w-3 h-3" />,
     error: <AlertOctagon className="w-3 h-3" />,
+    inactive: (
+      <div className="w-3 h-3 rounded-full border-2 border-slate-600" />
+    ),
   } as const;
 
   return (
     <div
       className={cn(
-        'flex items-center justify-between p-2 rounded border text-xs',
+        'flex items-center justify-between p-2.5 rounded-lg border text-xs',
         colors[status],
       )}
     >
-      <div className="flex items-center gap-2 font-semibold opacity-90">
+      <div className="flex items-center gap-2 font-bold opacity-90">
         {icons[status]}
         <span>{label}</span>
       </div>
       {value !== undefined && value !== null ? (
-        <div className="font-mono font-bold opacity-80">
-          {value as any}
-          <span className="text-[10px] ml-0.5 opacity-60">{unit}</span>
+        <div className="font-mono font-bold">
+          {value}
+          {unit && (
+            <span className="text-[10px] ml-0.5 opacity-70">{unit}</span>
+          )}
         </div>
-      ) : null}
+      ) : (
+        <div className="text-[10px] font-medium opacity-50">N/A</div>
+      )}
     </div>
   );
 }
@@ -269,41 +280,75 @@ function RODetailContent({
   );
 }
 
-// [UF/MF Detail]
+// [UF/MF Detail - WAVE Synchronized]
 function UFDetailContent({ data }: { data: any }) {
   if (!data) return null;
-  const { gross_flow_m3h, backwash_loss_m3h, net_recovery_pct } = data;
-  const recoveryVal = net_recovery_pct ?? 0;
+  const {
+    gross_flow_m3h,
+    net_flow_m3h,
+    backwash_loss_m3h,
+    recovery_pct,
+    net_recovery_pct,
+  } = data;
+
+  const netRecVal = net_recovery_pct ?? 0;
+  const grossRecVal = recovery_pct ?? 0;
 
   return (
     <div className="mt-3 pt-3 border-t border-dashed border-slate-700/50 space-y-3">
-      <div>
-        <div className="flex justify-between text-[9px] uppercase font-bold text-slate-500 mb-1">
-          <span>Net Recovery</span>
-          <span className="text-emerald-400">{pct(recoveryVal)}</span>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <div className="flex justify-between text-[9px] uppercase font-bold text-slate-500 mb-1">
+            <span>Gross Recovery</span>
+            <span className="text-blue-400">{pct(grossRecVal)}</span>
+          </div>
+          <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+            <div
+              style={{ width: `${Math.min(grossRecVal, 100)}%` }}
+              className="h-full bg-blue-500"
+            />
+          </div>
         </div>
-        <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden flex">
-          <div
-            style={{ width: `${Math.min(recoveryVal, 100)}%` }}
-            className="bg-emerald-500"
-          />
-          <div
-            style={{ width: `${Math.max(0, 100 - recoveryVal)}%` }}
-            className="bg-rose-500/50"
-          />
+        <div>
+          <div className="flex justify-between text-[9px] uppercase font-bold text-slate-500 mb-1">
+            <span>Net Recovery</span>
+            <span className="text-emerald-400">{pct(netRecVal)}</span>
+          </div>
+          <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden flex">
+            <div
+              style={{ width: `${Math.min(netRecVal, 100)}%` }}
+              className="bg-emerald-500"
+            />
+            <div
+              style={{ width: `${Math.max(0, grossRecVal - netRecVal)}%` }}
+              className="bg-rose-500/50"
+            />
+          </div>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="bg-slate-900/40 p-1.5 rounded border border-slate-800">
-          <div className="text-[9px] text-slate-500">Gross Flow</div>
-          <div className="font-mono text-xs font-bold text-slate-200">
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-slate-900/40 p-2 rounded border border-slate-800 flex flex-col justify-center">
+          <div className="text-[9px] text-slate-500 uppercase font-bold">
+            Gross Flow
+          </div>
+          <div className="font-mono text-sm font-bold text-blue-300">
             {fmt(gross_flow_m3h)}
           </div>
         </div>
-        <div className="bg-slate-900/40 p-1.5 rounded border border-slate-800">
-          <div className="text-[9px] text-rose-400/70">BW Loss</div>
-          <div className="font-mono text-xs font-bold text-rose-400">
+        <div className="bg-slate-900/40 p-2 rounded border border-slate-800 flex flex-col justify-center">
+          <div className="text-[9px] text-rose-400/70 uppercase font-bold">
+            BW/FF Loss
+          </div>
+          <div className="font-mono text-sm font-bold text-rose-400">
             -{fmt(backwash_loss_m3h)}
+          </div>
+        </div>
+        <div className="bg-slate-900/40 p-2 rounded border border-emerald-900/30 flex flex-col justify-center">
+          <div className="text-[9px] text-emerald-500/70 uppercase font-bold">
+            Net Flow
+          </div>
+          <div className="font-mono text-sm font-bold text-emerald-400">
+            {fmt(net_flow_m3h)}
           </div>
         </div>
       </div>
@@ -335,7 +380,6 @@ function HRROBatchChart({
     }));
   }, [history, hasData]);
 
-  // 데이터 들어오는 타이밍에 레이아웃 갱신 트리거(안전장치)
   useEffect(() => {
     if (!hasData) return;
     const raf = requestAnimationFrame(() =>
@@ -539,7 +583,11 @@ export function Visualization({ result, unitMode }: Props) {
 
   const kpi = result.kpi ?? {};
   const metrics = result.stage_metrics ?? [];
+
+  // 🛑 [WAVE PATCH] 신규 데이터 추출
   const chemFinal = result.chemistry?.final_brine;
+  const massBalance = kpi.mass_balance;
+  const warnings = result.warnings ?? [];
   const scenarioId = result.scenario_id;
 
   const recovery = n(kpi.recovery_pct);
@@ -548,9 +596,22 @@ export function Visualization({ result, unitMode }: Props) {
   const pressure = n(kpi.ndp_bar);
   const productTds = n(kpi.prod_tds);
 
+  // 🛑 [WAVE PATCH] Status 평가 로직
+  const checkStatus = (val: number | undefined | null, limit: number) => {
+    if (val === undefined || val === null) return 'inactive';
+    if (val > limit) return 'error';
+    if (val > limit * 0.8) return 'warning';
+    return 'ok';
+  };
+
   const lsi = chemFinal?.lsi;
-  const lsiNum = Number(lsi);
-  const lsiStatus = Number.isFinite(lsiNum) && lsiNum > 1.8 ? 'warning' : 'ok';
+  const caso4 = chemFinal?.caso4_sat_pct;
+  const sio2 = chemFinal?.sio2_sat_pct;
+
+  const lsiStatus = checkStatus(lsi, 1.8);
+  const caso4Status = checkStatus(caso4, 100);
+  const sio2Status = checkStatus(sio2, 100);
+  const mbStatus = massBalance?.is_balanced ? 'ok' : 'error';
 
   const onOpenDetailedReport = () => {
     navigate('/reports', {
@@ -587,6 +648,24 @@ export function Visualization({ result, unitMode }: Props) {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-5 scrollbar-thin scrollbar-track-slate-950 scrollbar-thumb-slate-800">
+        {/* 🛑 [WAVE PATCH] Warning Banner */}
+        {warnings.length > 0 && (
+          <div className="bg-rose-950/40 border border-rose-500/50 rounded-lg p-3 shadow-lg shadow-rose-900/20">
+            <div className="flex items-center gap-2 text-rose-400 font-bold text-[11px] uppercase tracking-wider mb-2">
+              <AlertTriangle className="w-4 h-4" /> System Warnings (
+              {warnings.length})
+            </div>
+            <ul className="text-xs text-rose-200/90 space-y-1 pl-6 list-disc font-medium">
+              {warnings.map((w: any, idx: number) => (
+                <li key={idx}>
+                  <span className="opacity-70 mr-1">[{w.stage || 'SYS'}]</span>
+                  {w.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* KPI cards */}
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2">
@@ -656,23 +735,41 @@ export function Visualization({ result, unitMode }: Props) {
           </div>
         </div>
 
-        {/* System Integrity */}
-        <div className="rounded-lg border border-slate-800 bg-slate-900/30 p-3">
-          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-3 border-b border-slate-800 pb-2">
-            <ShieldCheck className="w-3 h-3 text-emerald-500" /> System
-            Integrity Check
+        {/* 🛑 [WAVE PATCH] Enhanced System Integrity Check */}
+        <div className="rounded-lg border border-slate-700/60 bg-slate-900/60 p-3 shadow-lg">
+          <div className="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300 uppercase tracking-wide">
+              <ShieldCheck className="w-4 h-4 text-indigo-400" /> System
+              Integrity & Scaling
+            </div>
           </div>
-          <div className="space-y-2">
+
+          <div className="grid grid-cols-2 gap-2">
+            {/* Mass Balance */}
             <HealthCheckItem
-              label="LSI Scaling Potential"
-              status={lsiStatus}
-              value={lsi}
-              unit="(idx)"
+              label="Mass Balance (Flow/Salt)"
+              status={mbStatus}
+              value={mbStatus === 'ok' ? 'Closure < 1%' : 'Imbalanced'}
             />
+            {/* LSI */}
             <HealthCheckItem
-              label="Hydraulic Balance"
-              status="ok"
-              value="Stable"
+              label="LSI (Langelier Index)"
+              status={lsiStatus}
+              value={lsi !== undefined ? fmt(lsi, 2) : undefined}
+            />
+            {/* CaSO4 */}
+            <HealthCheckItem
+              label="CaSO4 Saturation"
+              status={caso4Status}
+              value={caso4 !== undefined ? fmt(caso4, 1) : undefined}
+              unit="%"
+            />
+            {/* SiO2 */}
+            <HealthCheckItem
+              label="SiO2 Saturation"
+              status={sio2Status}
+              value={sio2 !== undefined ? fmt(sio2, 1) : undefined}
+              unit="%"
             />
           </div>
         </div>
@@ -759,7 +856,7 @@ export function Visualization({ result, unitMode }: Props) {
                     <HRROBatchChart
                       history={hrroHistory}
                       unitPress={unitPress}
-                      unitFlux={unitFlux}
+                      unitFlow={unitFlow}
                     />
                   )}
                 </div>

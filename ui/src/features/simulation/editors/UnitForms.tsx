@@ -1,6 +1,6 @@
 // ui/src/features/simulation/editors/UnitForms.tsx
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Field, Input } from '../components/Common';
 import MembraneSelect from '../components/MembraneSelect';
 
@@ -15,7 +15,7 @@ import {
 } from '../model/types';
 
 // ==============================
-// 1. Helper Styles & Logic (스크롤 방지를 위한 여백 축소)
+// 1. Helper Styles & Logic
 // ==============================
 const GROUP_CLS =
   'p-2 border border-slate-800 rounded-lg bg-slate-900/40 mb-2 shadow-sm flex flex-col';
@@ -99,7 +99,7 @@ function PumpSection({
 }
 
 // ==============================
-// 3. HRRO Editor (스크롤 없이 한 화면에 표시)
+// 3. HRRO Editor
 // ==============================
 export function HRROEditor({
   node,
@@ -221,10 +221,9 @@ export function HRROEditor({
         </div>
       </div>
 
-      {/* 🚀 본문 영역 (스크롤 완전 제거: overflow-hidden) */}
       <div className="flex-1 grid grid-cols-12 gap-3 overflow-hidden">
         {/* ========================================================= */}
-        {/* 좌측: 기본 설정 및 수리학적 디테일 (8단) */}
+        {/* 좌측: 기본 설정 및 수리학적 디테일 */}
         {/* ========================================================= */}
         <div className="col-span-8 flex flex-col gap-2 h-full min-h-0">
           <div className="flex gap-3 flex-1 min-h-0">
@@ -296,7 +295,7 @@ export function HRROEditor({
               </div>
             </div>
 
-            {/* 2. 유량 상세 (Flows) */}
+            {/* 2. 유량 상세 */}
             <div
               className={`${GROUP_CLS} flex-1 !mb-0 border-blue-900/40 bg-blue-900/10`}
             >
@@ -379,7 +378,7 @@ export function HRROEditor({
             </div>
           </div>
 
-          {/* 하단 멤브레인 정보 (공간 최소화) */}
+          {/* 하단 멤브레인 정보 */}
           <div className="shrink-0">
             <div className="px-2 py-1.5 bg-slate-800/90 border-t border-x border-slate-700 rounded-t-md text-[10px] font-bold text-slate-200 shadow-sm">
               멤브레인 모델 및 제원 (Element Type Specs)
@@ -432,7 +431,7 @@ export function HRROEditor({
         </div>
 
         {/* ========================================================= */}
-        {/* 우측: 고급 설정 (Engineering Data - 4단) */}
+        {/* 우측: 고급 설정 (Engineering Data) */}
         {/* ========================================================= */}
         <div className="col-span-4 flex flex-col gap-2 h-full min-h-0">
           <div className="px-2 py-1.5 bg-slate-800/80 border border-slate-700 rounded-md text-[10px] font-bold text-slate-200 tracking-wide shrink-0 shadow-sm flex items-center justify-between">
@@ -493,7 +492,7 @@ export function HRROEditor({
             <PumpSection cfg={cfg} onChange={patch} defaultPressure={50.0} />
           </div>
 
-          {/* 플러그 흐름 & 운전 제한 (flex-1로 하단 꽉 채움) */}
+          {/* 플러그 흐름 & 운전 제한 */}
           <div className="grid grid-cols-2 gap-2 flex-1 min-h-0">
             <div className="flex flex-col p-2 border border-blue-900/40 bg-blue-900/10 rounded-lg">
               <h4 className="text-blue-400 font-bold mb-2 text-[10px] uppercase">
@@ -565,91 +564,383 @@ export function HRROEditor({
 }
 
 // ==============================
-// 4. RO Editor
+// 4. RO Editor (WAVE Synchronized)
 // ==============================
 export function ROEditor({
   node,
+  feed, // 🛑 [WAVE PATCH] 원수(Feed) 유량 데이터를 받아오기 위해 추가
   onChange,
 }: {
   node: UnitData | undefined;
+  feed?: any;
   onChange: (cfg: ROConfig) => void;
 }) {
-  if (!node || node.kind !== 'RO')
-    return <div className="text-red-400 text-xs">Invalid Data</div>;
+  if (!node || (node.kind !== 'RO' && node.kind !== 'NF'))
+    return <div className="text-red-400 text-xs p-4">Invalid Data</div>;
+
   const cfg = {
-    elements: 6,
-    mode: 'pressure' as const,
-    pressure_bar: 16,
+    mode: 'recovery' as const,
     recovery_target_pct: 75,
-    ro_n_stages: 1,
+    pressure_bar: 15.0,
+    flow_target_m3h: 50.0,
+
+    vessel_count: 10,
+    elements_per_vessel: 6,
+    elements: 60,
+
     flow_factor: 0.85,
+    spi: 1.1,
+    age_years: 3.0,
+
+    permeate_back_pressure_bar: 0.0,
+    pre_stage_dp_bar: 0.3,
+
+    recirc_flow_m3h: 0.0, // 순환
+    bypass_flow_m3h: 0.0, // 바이패스
+
     ...node.cfg,
   } as ROConfig;
+
   const patch = (p: Partial<ROConfig>) => onChange({ ...cfg, ...p });
+
+  const handleArrayChange = (
+    field: 'vessel_count' | 'elements_per_vessel',
+    value: number,
+  ) => {
+    const v = Math.max(1, value);
+    const other =
+      field === 'vessel_count'
+        ? cfg.elements_per_vessel || 6
+        : cfg.vessel_count || 10;
+    patch({ [field]: v, elements: v * other });
+  };
+
+  // 🛑 [WAVE PATCH] 실시간 유량(Flows) & 플럭스(Flux) 자동 계산 로직
+  const feedFlow = feed?.flow_m3h ?? 100;
+  let currentRecovery = cfg.recovery_target_pct ?? 75;
+  let permeateFlow = 0;
+
+  if (cfg.mode === 'flow') {
+    permeateFlow = cfg.flow_target_m3h ?? 50;
+    currentRecovery = feedFlow > 0 ? (permeateFlow / feedFlow) * 100 : 0;
+  } else {
+    // recovery 또는 pressure 모드일 경우 예상 유량 계산
+    permeateFlow = feedFlow * (currentRecovery / 100);
+  }
+
+  // 막 면적 (기본 37.2m² = 일반적인 8인치 막)
+  const currentArea = cfg.custom_area_m2 ?? cfg.membrane_area_m2 ?? 37.2;
+  const totalArea = currentArea * (cfg.elements || 60);
+  const flux = totalArea > 0 ? (permeateFlow * 1000) / totalArea : 0;
 
   return (
     <div
-      className="space-y-3 text-slate-100 text-xs"
+      className="flex flex-col h-full text-slate-100 p-1 overflow-hidden"
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <PumpSection cfg={cfg} onChange={patch} defaultPressure={15.0} />
-      <MembraneSelect
-        unitType="RO"
-        mode={cfg.membrane_mode}
-        model={cfg.membrane_model}
-        area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
-        A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
-        B={cfg.custom_B_lmh ?? cfg.membrane_B_lmh}
-        rej={cfg.custom_salt_rejection_pct ?? cfg.membrane_salt_rejection_pct}
-        onChange={(updates) => patch(mapMembraneChange(updates))}
-      />
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>제어 전략 (Control Strategy)</h4>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="제어 모드">
-            <select
-              className={INPUT_CLS}
-              value={cfg.mode}
-              onChange={(e) => patch({ mode: e.target.value as any })}
-            >
-              <option value="pressure">압력 고정 (Fix Pressure)</option>
-              <option value="recovery">회수율 고정 (Fix Recovery)</option>
-            </select>
-          </Field>
-          {cfg.mode === 'pressure' ? (
-            <Field label="공급 압력 (bar)">
-              <Input
-                className={INPUT_CLS}
-                value={cfg.pressure_bar}
-                onChange={(e) =>
-                  patch({ pressure_bar: Number(e.target.value) })
-                }
-              />
-            </Field>
-          ) : (
-            <Field label="목표 회수율 (%)">
-              <Input
-                className={INPUT_CLS}
-                value={cfg.recovery_target_pct}
-                onChange={(e) =>
-                  patch({ recovery_target_pct: Number(e.target.value) })
-                }
-              />
-            </Field>
-          )}
+      {/* 📊 상단 대시보드 (WAVE Flows 패널) */}
+      <div className="grid grid-cols-4 gap-2 p-2 bg-slate-900 border border-slate-700 rounded-lg shadow-inner shrink-0 mb-2">
+        <div className="flex flex-col items-center border-r border-slate-700">
+          <span className="text-[10px] text-slate-400 font-bold mb-0.5">
+            유입 유량 (Feed)
+          </span>
+          <span className="font-mono text-base font-bold text-slate-100">
+            {feedFlow.toFixed(1)}{' '}
+            <small className="text-[9px] font-normal text-slate-500">
+              m³/h
+            </small>
+          </span>
         </div>
-        <div className="mt-3 pt-3 border-t border-slate-700/50">
-          <Field label="유량 계수 (Flow Factor, 1.0=New)">
-            <Input
-              className={INPUT_CLS}
-              type="number"
-              step={0.05}
-              value={cfg.flow_factor ?? 0.85}
-              onChange={(e) =>
-                patch({ flow_factor: parseFloat(e.target.value) })
-              }
-            />
-          </Field>
+        <div className="flex flex-col items-center border-r border-slate-700">
+          <span className="text-[10px] text-emerald-400 font-bold mb-0.5">
+            회수율 (Recovery)
+          </span>
+          <span className="font-mono text-base font-bold text-emerald-400">
+            {currentRecovery.toFixed(1)}{' '}
+            <small className="text-[9px] font-normal text-emerald-600/70">
+              %
+            </small>
+          </span>
+        </div>
+        <div className="flex flex-col items-center border-r border-slate-700">
+          <span className="text-[10px] text-blue-400 font-bold mb-0.5">
+            생산 유량 (Permeate)
+          </span>
+          <span className="font-mono text-base font-bold text-blue-300">
+            {permeateFlow.toFixed(1)}{' '}
+            <small className="text-[9px] font-normal text-blue-500/70">
+              m³/h
+            </small>
+          </span>
+        </div>
+        <div className="flex flex-col items-center">
+          <span className="text-[10px] text-amber-400 font-bold mb-0.5">
+            평균 플럭스 (Flux)
+          </span>
+          <span className="font-mono text-base font-bold text-amber-300">
+            {flux.toFixed(1)}{' '}
+            <small className="text-[9px] font-normal text-amber-600/70">
+              LMH
+            </small>
+          </span>
+        </div>
+      </div>
+
+      <div className="flex-1 grid grid-cols-12 gap-3 overflow-hidden">
+        {/* ========================================================= */}
+        {/* 좌측: 배열(Array) 및 기본 운전 제어 */}
+        {/* ========================================================= */}
+        <div className="col-span-6 flex flex-col gap-2 h-full min-h-0 overflow-y-auto custom-scrollbar pr-1">
+          <div className="shrink-0">
+            <div className="px-2 py-1.5 bg-slate-800/90 border border-slate-700 rounded-t-md text-[10px] font-bold text-slate-200">
+              Membrane Type ({node.kind})
+            </div>
+            <div className="p-2 border-x border-b border-slate-700 bg-slate-900/60 rounded-b-md">
+              <MembraneSelect
+                unitType={node.kind as 'RO' | 'NF'}
+                mode={cfg.membrane_mode}
+                model={cfg.membrane_model}
+                area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
+                A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
+                B={cfg.custom_B_lmh ?? cfg.membrane_B_lmh}
+                rej={
+                  cfg.custom_salt_rejection_pct ??
+                  cfg.membrane_salt_rejection_pct
+                }
+                onChange={(updates) => patch(mapMembraneChange(updates))}
+              />
+            </div>
+          </div>
+
+          <div className={`${GROUP_CLS} shrink-0 !mb-0`}>
+            <h4 className={HEADER_CLS}>📏 모듈 배열 (Array Configuration)</h4>
+            <div className="grid grid-cols-3 gap-2">
+              <Field label="PV (베셀 수)">
+                <Input
+                  className={INPUT_CLS}
+                  type="number"
+                  min={1}
+                  value={cfg.vessel_count}
+                  onChange={(e) =>
+                    handleArrayChange('vessel_count', parseInt(e.target.value))
+                  }
+                />
+              </Field>
+              <Field label="수량 / PV">
+                <Input
+                  className={INPUT_CLS}
+                  type="number"
+                  min={1}
+                  max={8}
+                  value={cfg.elements_per_vessel}
+                  onChange={(e) =>
+                    handleArrayChange(
+                      'elements_per_vessel',
+                      parseInt(e.target.value),
+                    )
+                  }
+                />
+              </Field>
+              <Field label="총 모듈 수">
+                <div
+                  className={`${READONLY_CLS} text-slate-300 w-full justify-center bg-slate-800/50`}
+                >
+                  {cfg.elements} EA
+                </div>
+              </Field>
+            </div>
+          </div>
+
+          <div
+            className={`${GROUP_CLS} shrink-0 !mb-0 border-blue-900/40 bg-blue-900/10`}
+          >
+            <h4 className={`${HEADER_CLS} border-blue-900/30 text-blue-400`}>
+              🎯 운전 제어 목표 (Operating Target)
+            </h4>
+            <div className="flex flex-col gap-2">
+              <Field label="제어 기준">
+                <select
+                  className={`${INPUT_CLS} border-blue-800/50 bg-blue-950/40 font-bold text-blue-200`}
+                  value={cfg.mode}
+                  onChange={(e) => patch({ mode: e.target.value as any })}
+                >
+                  <option value="recovery">
+                    Target Recovery (회수율 고정)
+                  </option>
+                  <option value="flow">Target Permeate Flow (유량 고정)</option>
+                  <option value="pressure">Feed Pressure (압력 고정)</option>
+                </select>
+              </Field>
+
+              <div className="mt-1">
+                {cfg.mode === 'recovery' && (
+                  <Field label="목표 회수율 (%)">
+                    <Input
+                      className={`${INPUT_CLS} font-bold text-blue-300`}
+                      type="number"
+                      step={0.1}
+                      value={cfg.recovery_target_pct}
+                      onChange={(e) =>
+                        patch({ recovery_target_pct: Number(e.target.value) })
+                      }
+                    />
+                  </Field>
+                )}
+                {cfg.mode === 'flow' && (
+                  <Field label="목표 생산 유량 (m³/h)">
+                    <Input
+                      className={`${INPUT_CLS} font-bold text-blue-300`}
+                      type="number"
+                      value={cfg.flow_target_m3h}
+                      onChange={(e) =>
+                        patch({ flow_target_m3h: Number(e.target.value) })
+                      }
+                    />
+                  </Field>
+                )}
+                {cfg.mode === 'pressure' && (
+                  <Field label="고정 유입 압력 (bar)">
+                    <Input
+                      className={`${INPUT_CLS} font-bold text-amber-300`}
+                      type="number"
+                      value={cfg.pressure_bar}
+                      onChange={(e) =>
+                        patch({ pressure_bar: Number(e.target.value) })
+                      }
+                    />
+                  </Field>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ========================================================= */}
+        {/* 우측: 노후화(Ageing) 및 수리학(Hydraulics) */}
+        {/* ========================================================= */}
+        <div className="col-span-6 flex flex-col gap-2 h-full min-h-0 overflow-y-auto custom-scrollbar pr-1">
+          <PumpSection cfg={cfg} onChange={patch} defaultPressure={15.0} />
+
+          <div
+            className={`${GROUP_CLS} shrink-0 !mb-0 border-amber-900/30 bg-amber-900/5`}
+          >
+            <h4 className={`${HEADER_CLS} border-amber-900/20 text-amber-500`}>
+              ⏳ 노후화 및 오염 계수 (Ageing & Fouling)
+            </h4>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="운전 년수 (Age)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    type="number"
+                    step={0.5}
+                    value={cfg.age_years}
+                    onChange={(e) =>
+                      patch({ age_years: Number(e.target.value) })
+                    }
+                  />
+                  <span className="text-[9px] text-slate-500 w-6">Yrs</span>
+                </div>
+              </Field>
+              <div className="hidden" />
+
+              <Field label="유량 계수 (Flow Factor)">
+                <Input
+                  className={INPUT_CLS}
+                  type="number"
+                  step={0.01}
+                  value={cfg.flow_factor}
+                  onChange={(e) =>
+                    patch({ flow_factor: parseFloat(e.target.value) })
+                  }
+                />
+              </Field>
+              <Field label="염 투과 증가율 (SPI)">
+                <Input
+                  className={INPUT_CLS}
+                  type="number"
+                  step={0.05}
+                  value={cfg.spi}
+                  onChange={(e) => patch({ spi: parseFloat(e.target.value) })}
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div className={`${GROUP_CLS} shrink-0 !mb-0`}>
+            <h4 className={HEADER_CLS}>💧 수리학적 압력 (Hydraulics)</h4>
+            <div className="flex flex-col gap-2">
+              <Field label="생산수 배압 (Permeate Pressure)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    type="number"
+                    step={0.1}
+                    value={cfg.permeate_back_pressure_bar}
+                    onChange={(e) =>
+                      patch({
+                        permeate_back_pressure_bar: Number(e.target.value),
+                      })
+                    }
+                  />
+                  <span className="text-[9px] text-slate-500 w-6">bar</span>
+                </div>
+              </Field>
+              <Field label="전단 배관 손실 (Pre-stage ΔP)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    type="number"
+                    step={0.1}
+                    value={cfg.pre_stage_dp_bar}
+                    onChange={(e) =>
+                      patch({ pre_stage_dp_bar: Number(e.target.value) })
+                    }
+                  />
+                  <span className="text-[9px] text-slate-500 w-6">bar</span>
+                </div>
+              </Field>
+            </div>
+          </div>
+
+          {/* 🛑 [WAVE PATCH] 추가된 Flow Routing 섹션 */}
+          <div
+            className={`${GROUP_CLS} shrink-0 !mb-0 border-blue-900/30 bg-blue-900/5`}
+          >
+            <h4 className={`${HEADER_CLS} border-blue-900/20 text-blue-400`}>
+              🌊 유량 상세 (Flow Routing)
+            </h4>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="농축수 순환 (Recycle)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    type="number"
+                    step={0.1}
+                    value={cfg.recirc_flow_m3h ?? 0}
+                    onChange={(e) =>
+                      patch({ recirc_flow_m3h: Number(e.target.value) })
+                    }
+                  />
+                  <span className="text-[9px] text-slate-500 w-6">m³/h</span>
+                </div>
+              </Field>
+              <Field label="바이패스 (Bypass)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    type="number"
+                    step={0.1}
+                    value={cfg.bypass_flow_m3h ?? 0}
+                    onChange={(e) =>
+                      patch({ bypass_flow_m3h: Number(e.target.value) })
+                    }
+                  />
+                  <span className="text-[9px] text-slate-500 w-6">m³/h</span>
+                </div>
+              </Field>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -667,48 +958,256 @@ export function UFEditor({
   onChange: (cfg: UFConfig) => void;
 }) {
   if (!node || node.kind !== 'UF')
-    return <div className="text-red-400 text-xs">Invalid Data</div>;
+    return <div className="text-red-400 text-xs p-4">Invalid Data</div>;
+
+  // 기본값 설정 (WAVE Default 1:1 매칭)
   const cfg = {
-    elements: 6,
-    filtration_duration_min: 30,
-    uf_backwash_duration_s: 60,
+    elements: 50,
+    design_flux_lmh: 55.5,
+    strainer_recovery_pct: 99.5,
+    strainer_size_micron: 150.0,
+    uf_maintenance: {
+      filtration_duration_min: 60,
+      backwash_duration_sec: 60,
+      air_scour_duration_sec: 30,
+      forward_flush_duration_sec: 30,
+      acid_ceb_interval_h: 0,
+      alkali_ceb_interval_h: 0,
+      cip_interval_d: 0,
+      mini_cip_interval_d: 0,
+      backwash_flux_lmh: 100.0,
+      ceb_flux_lmh: 80.0,
+      forward_flush_flow_m3h_per_mod: 2.83,
+      air_flow_nm3h_per_mod: 12.0,
+    },
     ...node.cfg,
-  } as UFConfig;
+  } as UFConfig & { uf_maintenance: any }; // 타입 우회
+
   const patch = (p: Partial<UFConfig>) => onChange({ ...cfg, ...p });
+
+  const patchMaintenance = (p: any) => {
+    patch({
+      uf_maintenance: {
+        ...(cfg.uf_maintenance || {}),
+        ...p,
+      },
+    } as any);
+  };
 
   return (
     <div
-      className="space-y-3 text-slate-100 text-xs"
+      className="flex flex-col h-full text-slate-100 p-1 overflow-hidden"
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <PumpSection cfg={cfg} onChange={patch} defaultPressure={3.0} />
-      <MembraneSelect
-        unitType="UF"
-        mode={cfg.membrane_mode}
-        model={cfg.membrane_model}
-        area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
-        A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
-        onChange={(updates) => patch(mapMembraneChange(updates))}
-      />
-      <div className={GROUP_CLS}>
-        <h4 className={HEADER_CLS}>운전 설정 (Operation)</h4>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="모듈 수 (Modules)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.elements}
-              onChange={(e) => patch({ elements: Number(e.target.value) })}
-            />
-          </Field>
-          <Field label="여과 시간 (min)">
-            <Input
-              className={INPUT_CLS}
-              value={cfg.filtration_duration_min}
-              onChange={(e) =>
-                patch({ filtration_duration_min: Number(e.target.value) })
-              }
-            />
-          </Field>
+      <div className="flex-1 grid grid-cols-12 gap-3 overflow-hidden">
+        {/* ========================================================= */}
+        {/* 좌측: 기본 설계 및 하드웨어 */}
+        {/* ========================================================= */}
+        <div className="col-span-7 flex flex-col gap-2 h-full min-h-0">
+          <PumpSection cfg={cfg} onChange={patch} defaultPressure={3.4} />
+
+          {/* 스트레이너 설정 */}
+          <div
+            className={`${GROUP_CLS} shrink-0 !mb-0 border-amber-900/40 bg-amber-900/10`}
+          >
+            <h4 className={`${HEADER_CLS} border-amber-900/30 text-amber-500`}>
+              🛡️ 전처리 스트레이너 (Strainer Specification)
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="스트레이너 회수율 (%)">
+                <Input
+                  className={`${INPUT_CLS} text-amber-400 font-bold`}
+                  type="number"
+                  step={0.1}
+                  value={cfg.strainer_recovery_pct}
+                  onChange={(e) =>
+                    patch({ strainer_recovery_pct: Number(e.target.value) })
+                  }
+                />
+              </Field>
+              <Field label="스트레이너 크기 (μm)">
+                <Input
+                  className={INPUT_CLS}
+                  type="number"
+                  value={cfg.strainer_size_micron}
+                  onChange={(e) =>
+                    patch({ strainer_size_micron: Number(e.target.value) })
+                  }
+                />
+              </Field>
+            </div>
+          </div>
+
+          <MembraneSelect
+            unitType="UF"
+            mode={cfg.membrane_mode}
+            model={cfg.membrane_model}
+            area={cfg.custom_area_m2 ?? cfg.membrane_area_m2 ?? 77.0}
+            A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
+            onChange={(updates) => patch(mapMembraneChange(updates))}
+          />
+
+          <div className={`${GROUP_CLS} flex-1 !mb-0`}>
+            <h4 className={HEADER_CLS}>
+              ⚙️ 모듈 선택 및 유량 (Module Selection)
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="총 모듈 수 (Total Modules)">
+                <Input
+                  className={INPUT_CLS}
+                  type="number"
+                  value={cfg.elements}
+                  onChange={(e) => patch({ elements: Number(e.target.value) })}
+                />
+              </Field>
+              <Field label="목표 플럭스 (Filtrate Flux, LMH)">
+                <Input
+                  className={`${INPUT_CLS} text-blue-300 font-bold bg-blue-950/40`}
+                  type="number"
+                  step={0.1}
+                  value={cfg.design_flux_lmh}
+                  onChange={(e) =>
+                    patch({ design_flux_lmh: Number(e.target.value) })
+                  }
+                />
+              </Field>
+            </div>
+          </div>
+        </div>
+
+        {/* ========================================================= */}
+        {/* 우측: WAVE 상세 유지보수 사이클 및 유량 */}
+        {/* ========================================================= */}
+        <div className="col-span-5 flex flex-col gap-2 h-full min-h-0">
+          {/* Design Instantaneous Flux and Flow Rates */}
+          <div
+            className={`${GROUP_CLS} flex-1 !mb-0 overflow-y-auto custom-scrollbar pr-1 border-blue-900/30 bg-blue-900/5`}
+          >
+            <h4 className={`${HEADER_CLS} text-blue-400 border-blue-900/30`}>
+              💦 설계 순시 유량 (Flux & Flow Rates)
+            </h4>
+            <div className="flex flex-col gap-2">
+              <Field label="역세 플럭스 (Backwash Flux)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    value={cfg.uf_maintenance?.backwash_flux_lmh}
+                    onChange={(e) =>
+                      patchMaintenance({
+                        backwash_flux_lmh: Number(e.target.value),
+                      })
+                    }
+                  />
+                  <span className="text-[10px] text-slate-500 w-6">LMH</span>
+                </div>
+              </Field>
+              <Field label="CEB 플럭스 (CEB Flux)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    value={cfg.uf_maintenance?.ceb_flux_lmh}
+                    onChange={(e) =>
+                      patchMaintenance({ ceb_flux_lmh: Number(e.target.value) })
+                    }
+                  />
+                  <span className="text-[10px] text-slate-500 w-6">LMH</span>
+                </div>
+              </Field>
+              <Field label="포워드 플러시 (m³/h/module)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    value={cfg.uf_maintenance?.forward_flush_flow_m3h_per_mod}
+                    onChange={(e) =>
+                      patchMaintenance({
+                        forward_flush_flow_m3h_per_mod: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+              </Field>
+              <Field label="공기 유량 (Nm³/h/module)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    value={cfg.uf_maintenance?.air_flow_nm3h_per_mod}
+                    onChange={(e) =>
+                      patchMaintenance({
+                        air_flow_nm3h_per_mod: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+              </Field>
+            </div>
+          </div>
+
+          {/* Design Cycle Intervals */}
+          <div
+            className={`${GROUP_CLS} flex-1 !mb-0 overflow-y-auto custom-scrollbar pr-1`}
+          >
+            <h4 className={HEADER_CLS}>
+              ⏱️ 설계 주기 (Design Cycle Intervals)
+            </h4>
+            <div className="flex flex-col gap-2">
+              <Field label="여과 시간 (Filtration Duration)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={`${INPUT_CLS} text-emerald-400 font-bold`}
+                    value={cfg.uf_maintenance?.filtration_duration_min}
+                    onChange={(e) =>
+                      patchMaintenance({
+                        filtration_duration_min: Number(e.target.value),
+                      })
+                    }
+                  />
+                  <span className="text-[10px] text-slate-500 w-6">min</span>
+                </div>
+              </Field>
+              <Field label="산성 CEB 주기 (Acid CEB)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    value={cfg.uf_maintenance?.acid_ceb_interval_h}
+                    onChange={(e) =>
+                      patchMaintenance({
+                        acid_ceb_interval_h: Number(e.target.value),
+                      })
+                    }
+                  />
+                  <span className="text-[10px] text-slate-500 w-6">h</span>
+                </div>
+              </Field>
+              <Field label="알칼리 CEB (Alkali/Oxidant CEB)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    value={cfg.uf_maintenance?.alkali_ceb_interval_h}
+                    onChange={(e) =>
+                      patchMaintenance({
+                        alkali_ceb_interval_h: Number(e.target.value),
+                      })
+                    }
+                  />
+                  <span className="text-[10px] text-slate-500 w-6">h</span>
+                </div>
+              </Field>
+              <Field label="CIP 주기 (CIP)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    className={INPUT_CLS}
+                    value={cfg.uf_maintenance?.cip_interval_d}
+                    onChange={(e) =>
+                      patchMaintenance({
+                        cip_interval_d: Number(e.target.value),
+                      })
+                    }
+                  />
+                  <span className="text-[10px] text-slate-500 w-6">d</span>
+                </div>
+              </Field>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -716,29 +1215,18 @@ export function UFEditor({
 }
 
 // ==============================
-// 6. NF/MF/Pump (Placeholders)
+// 6. NF/MF/Pump
 // ==============================
-export function NFEditor({ node, onChange }: any) {
-  const cfg = node.cfg || {};
-  return (
-    <div className="space-y-3">
-      <MembraneSelect
-        unitType="NF"
-        mode={cfg.membrane_mode}
-        area={cfg.custom_area_m2 ?? cfg.membrane_area_m2}
-        A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
-        B={cfg.custom_B_lmh ?? cfg.membrane_B_lmh}
-        rej={cfg.custom_salt_rejection_pct ?? cfg.membrane_salt_rejection_pct}
-        onChange={(u) => onChange({ ...cfg, ...mapMembraneChange(u) })}
-      />
-    </div>
-  );
+
+// 🛑 [WAVE PATCH] NF는 RO와 완벽히 동일한 구조(Array, Fouling 등)를 사용하므로 ROEditor 재사용
+export function NFEditor(props: any) {
+  return <ROEditor {...props} />;
 }
 
 export function MFEditor({ node, onChange }: any) {
   const cfg = node.cfg || {};
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 p-4">
       <MembraneSelect
         unitType="MF"
         mode={cfg.membrane_mode}
@@ -746,6 +1234,9 @@ export function MFEditor({ node, onChange }: any) {
         A={cfg.custom_A_lmh_bar ?? cfg.membrane_A_lmh_bar}
         onChange={(u) => onChange({ ...cfg, ...mapMembraneChange(u) })}
       />
+      <div className="text-xs text-slate-400 mt-2">
+        * 상세 설정 폼은 추후 확장 예정입니다.
+      </div>
     </div>
   );
 }
@@ -753,7 +1244,7 @@ export function MFEditor({ node, onChange }: any) {
 export function PumpEditor({ node }: any) {
   return (
     <div className="p-4 text-center text-xs text-slate-500 bg-slate-900/50 rounded-lg border border-slate-700 border-dashed">
-      단독 펌프(Pump) 노드 설정
+      단독 고압 펌프(Pump) 노드 설정입니다.
     </div>
   );
 }

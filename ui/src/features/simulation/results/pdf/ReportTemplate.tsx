@@ -321,12 +321,9 @@ export const ReportTemplate = React.forwardRef<HTMLDivElement, ReportProps>(
           <>
             <div className="h-4" />
             <Section
-              title="Brine Scaling & Solubility"
-              icon={<FlaskConical className="w-4 h-4 opacity-70" />}
-              right={
-                <span className={THEME.MUTED}>
-                  Concentrate Stream (100% Limit)
-                </span>
+              title="농축수 스케일링 위험도 (Brine Scaling)"
+              icon={
+                <FlaskConical className="w-4 h-4 opacity-70 text-violet-400" />
               }
             >
               <BrineScalingPanel chemistry={safeObj(safeData.chemistry)} />

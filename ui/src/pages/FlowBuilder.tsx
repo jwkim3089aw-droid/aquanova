@@ -1,4 +1,4 @@
-// src/pages/FlowBuilder.tsx
+// ui/src/pages/FlowBuilder.tsx
 
 import React from 'react'; // [ADDED]
 import FlowBuilderScreen from '@/features/simulation/FlowBuilderScreen'; // [CHANGED]

@@ -64,6 +64,7 @@ import {
 } from '../model/logic';
 
 import { defaultConfig, ensureUnitCfg } from '../FlowBuilder.utils';
+import { normalizeWaterType } from '../model/feedWater';
 
 const SESSION_KEY = 'AQUANOVA_SESSION_V1';
 
@@ -74,12 +75,17 @@ const DEFAULT_FEED: FeedState = {
   ph: 7.0,
   pressure_bar: 0.0,
 
-  water_type: null,
+  water_type: 'RO/NF Well Water',
   water_subtype: null,
-  turbidity_ntu: null,
-  tss_mgL: null,
-  sdi15: null,
-  toc_mgL: null,
+
+  fouling: {
+    turbidity_ntu: null,
+    tss_mgL: null,
+    sdi15: null,
+    toc_mgL: null,
+    cod_mgL: null,
+    bod_mgL: null,
+  },
 
   temp_min_C: null,
   temp_max_C: null,
@@ -88,6 +94,26 @@ const DEFAULT_FEED: FeedState = {
   charge_balance_mode: null,
 };
 
+function migrateFeedState(raw: any): FeedState {
+  if (!raw) return clone(DEFAULT_FEED);
+
+  const safeWaterType =
+    normalizeWaterType(raw.water_type) || 'RO/NF Well Water';
+
+  return {
+    ...raw,
+    water_type: safeWaterType,
+    fouling: {
+      turbidity_ntu: raw.fouling?.turbidity_ntu ?? raw.turbidity_ntu ?? null,
+      tss_mgL: raw.fouling?.tss_mgL ?? raw.tss_mgL ?? null,
+      sdi15: raw.fouling?.sdi15 ?? raw.sdi15 ?? null,
+      toc_mgL: raw.fouling?.toc_mgL ?? raw.toc_mgL ?? null,
+      cod_mgL: raw.fouling?.cod_mgL ?? null,
+      bod_mgL: raw.fouling?.bod_mgL ?? null,
+    },
+  };
+}
+
 function hasAnyNumber(obj: Record<string, any> | null | undefined): boolean {
   if (!obj) return false;
   return Object.values(obj).some(
@@ -95,11 +121,6 @@ function hasAnyNumber(obj: Record<string, any> | null | undefined): boolean {
   );
 }
 
-/**
- * Map UI ChemistryInput -> backend {chemistry, ions}
- * - chemistry: WaterChemistryInput (scaling inputs)
- * - ions: IonCompositionInput (Excel ions)
- */
 function mapChemistryToBackend(ui: ChemistryInput | null | undefined): {
   chemistry?: WaterChemistryInput | null;
   ions?: IonCompositionInput | null;
@@ -123,8 +144,6 @@ function mapChemistryToBackend(ui: ChemistryInput | null | undefined): {
     Ca: ui.ca_mgL ?? null,
     Sr: ui.sr_mgL ?? null,
     Ba: ui.ba_mgL ?? null,
-
-    // WAVE anions 구성
     HCO3: ui.hco3_mgL ?? null,
     NO3: ui.no3_mgL ?? null,
     Cl: ui.cl_mgL ?? null,
@@ -133,15 +152,12 @@ function mapChemistryToBackend(ui: ChemistryInput | null | undefined): {
     Br: ui.br_mgL ?? null,
     PO4: ui.po4_mgL ?? null,
     CO3: ui.co3_mgL ?? null,
-
-    // neutrals
     CO2: ui.co2_mgL ?? null,
     SiO2: ui.sio2_mgL ?? ui.silica_mgL_SiO2 ?? null,
     B: ui.b_mgL ?? null,
-
-    // metals
     Fe: ui.fe_mgL ?? null,
     Mn: ui.mn_mgL ?? null,
+    Al: ui.al_mgL ?? null,
   };
 
   const chemistryOut = hasAnyNumber(chemistry as any) ? chemistry : null;
@@ -162,7 +178,6 @@ function isEditableTarget(t: EventTarget | null): boolean {
 export function useFlowLogic() {
   const rfRef = useRef<ReactFlowInstance | null>(null);
 
-  // Stable initial endpoints
   const INITIAL_NODES: Node<FlowData>[] = useMemo(
     () => [
       {
@@ -181,7 +196,6 @@ export function useFlowLogic() {
     [],
   );
 
-  // [Session Load]
   const sessionData = useMemo(() => {
     try {
       const saved = sessionStorage.getItem(SESSION_KEY);
@@ -192,7 +206,6 @@ export function useFlowLogic() {
     return null;
   }, []);
 
-  // --- States ---
   const [unitMode, setUnitMode] = useState<UnitMode>(
     sessionData?.unitMode || 'SI',
   );
@@ -205,15 +218,13 @@ export function useFlowLogic() {
     loadLibrary(),
   );
 
-  const [feed, setFeed] = useState<FeedState>(
-    (sessionData?.feed as FeedState) || DEFAULT_FEED,
+  const [feed, setFeed] = useState<FeedState>(() =>
+    migrateFeedState(sessionData?.feed),
   );
-
   const [feedChemistry, setFeedChemistry] = useState<ChemistryInput>(
     sessionData?.feedChemistry || DEFAULT_CHEMISTRY,
   );
 
-  // Global Options
   const [optAuto, setOptAuto] = useState(sessionData?.opt?.auto ?? true);
   const [optMembrane, setOptMembrane] = useState<string>(
     sessionData?.opt?.membrane || 'AUTO',
@@ -226,7 +237,6 @@ export function useFlowLogic() {
     sessionData?.opt?.segments ?? 10,
   );
 
-  // Nodes & Edges
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowData>(
     sessionData?.nodes ? ensureUnitCfg(sessionData.nodes) : INITIAL_NODES,
   );
@@ -238,18 +248,15 @@ export function useFlowLogic() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Results
   const [data, setData] = useState<any | null>(sessionData?.data || null);
   const [chemSummary, setChemSummary] = useState<any | null>(
     sessionData?.chemSummary || null,
   );
 
-  // UI States
   const [editorOpen, setEditorOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  // History (Undo/Redo)
   const [history, setHistory] = useState<{
     past: Snapshot[];
     future: Snapshot[];
@@ -258,9 +265,6 @@ export function useFlowLogic() {
     future: [],
   });
 
-  // ---------------------------------------------------------------------------
-  // Auto-save session
-  // ---------------------------------------------------------------------------
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       const payload = {
@@ -283,7 +287,6 @@ export function useFlowLogic() {
       };
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
     }, 500);
-
     return () => clearTimeout(timeoutId);
   }, [
     unitMode,
@@ -301,9 +304,6 @@ export function useFlowLogic() {
     optErdEff,
   ]);
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
   const pushToast = useCallback((msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 1500);
@@ -316,9 +316,6 @@ export function useFlowLogic() {
     }));
   }, [nodes, edges]);
 
-  // ---------------------------------------------------------------------------
-  // Undo / Redo
-  // ---------------------------------------------------------------------------
   const undo = useCallback(() => {
     setHistory((h) => {
       if (!h.past.length) return h;
@@ -346,14 +343,10 @@ export function useFlowLogic() {
     });
   }, [nodes, edges, setNodes, setEdges]);
 
-  // ---------------------------------------------------------------------------
-  // Selection
-  // ---------------------------------------------------------------------------
   const sel = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId) || null,
     [nodes, selectedNodeId],
   );
-
   const selUnit = useMemo(() => (isUnitNode(sel) ? sel : null), [sel]);
 
   const selEndpoint = useMemo(() => {
@@ -373,9 +366,6 @@ export function useFlowLogic() {
     return undefined;
   }, [selUnit]);
 
-  // ---------------------------------------------------------------------------
-  // Palette drag/drop
-  // ---------------------------------------------------------------------------
   const onDragStartPalette = useCallback((k: UnitKind, ev: DragEvent) => {
     ev.dataTransfer.setData('application/x-unitkind', k);
     ev.dataTransfer.effectAllowed = 'move';
@@ -398,7 +388,6 @@ export function useFlowLogic() {
         x: ev.clientX,
         y: ev.clientY,
       }) ?? { x: 200, y: 120 };
-
       const id = cryptoRandomId();
       pushHistory();
 
@@ -422,9 +411,6 @@ export function useFlowLogic() {
     [pushHistory, setNodes],
   );
 
-  // ---------------------------------------------------------------------------
-  // Connect / Move / Delete edges
-  // ---------------------------------------------------------------------------
   const onConnect = useCallback(
     (params: Edge | Connection) => {
       pushHistory();
@@ -452,14 +438,10 @@ export function useFlowLogic() {
   const onNodeDragStop = useCallback(() => pushHistory(), [pushHistory]);
   const onEdgesDelete = useCallback(() => pushHistory(), [pushHistory]);
 
-  // ---------------------------------------------------------------------------
-  // Toggle Units (convert feed + pressure + UF/MF flux inputs)
-  // ---------------------------------------------------------------------------
   const toggleUnits = useCallback(
     (next: UnitMode) => {
       if (next === unitMode) return;
 
-      // Feed conversion
       const feed2: FeedState = { ...feed };
       feed2.flow_m3h = convFlow(feed2.flow_m3h, unitMode, next);
       feed2.temperature_C = convTemp(feed2.temperature_C, unitMode, next);
@@ -469,13 +451,11 @@ export function useFlowLogic() {
       }
       setFeed(feed2);
 
-      // Node conversions
       setNodes((arr) =>
         arr.map((n) => {
           const d = n.data as any;
           if (!d || d.type !== 'unit') return n;
 
-          // HRRO pressure
           if (d.kind === 'HRRO') {
             const c = d.cfg as HRROConfig;
             const p = convPress(c.p_set_bar, unitMode, next);
@@ -485,19 +465,77 @@ export function useFlowLogic() {
             } as Node<FlowData>;
           }
 
-          // RO/NF/MF pressures
-          if (['RO', 'NF', 'MF'].includes(d.kind)) {
-            const c = d.cfg as ROConfig | NFConfig | MFConfig;
+          // 🛑 [MULTI-STAGE PATCH] 다단 배열 내의 압력과 시스템 유량 설정까지 단위 변환 적용
+          if (['RO', 'NF'].includes(d.kind)) {
+            const c = clone(d.cfg) as ROConfig | NFConfig;
+
             if (c.mode === 'pressure' && typeof c.pressure_bar === 'number') {
-              const p = convPress(c.pressure_bar, unitMode, next);
-              return {
-                ...n,
-                data: { ...d, cfg: { ...c, pressure_bar: p } },
-              } as Node<FlowData>;
+              c.pressure_bar = convPress(c.pressure_bar, unitMode, next);
             }
+            if (c.mode === 'flow' && typeof c.flow_target_m3h === 'number') {
+              c.flow_target_m3h = convFlow(c.flow_target_m3h, unitMode, next);
+            }
+            if (typeof c.permeate_back_pressure_bar === 'number') {
+              c.permeate_back_pressure_bar = convPress(
+                c.permeate_back_pressure_bar,
+                unitMode,
+                next,
+              );
+            }
+
+            if (c.stages && c.stages.length > 0) {
+              c.stages = c.stages.map((stg: any) => ({
+                ...stg,
+                pre_stage_dp_bar:
+                  typeof stg.pre_stage_dp_bar === 'number'
+                    ? convPress(stg.pre_stage_dp_bar, unitMode, next)
+                    : stg.pre_stage_dp_bar,
+                isbp_pressure_bar:
+                  typeof stg.isbp_pressure_bar === 'number'
+                    ? convPress(stg.isbp_pressure_bar, unitMode, next)
+                    : stg.isbp_pressure_bar,
+              }));
+            } else {
+              if (typeof c.pre_stage_dp_bar === 'number') {
+                c.pre_stage_dp_bar = convPress(
+                  c.pre_stage_dp_bar,
+                  unitMode,
+                  next,
+                );
+              }
+            }
+
+            return { ...n, data: { ...d, cfg: c } } as Node<FlowData>;
           }
 
-          // UF flux conversions (LMH <-> gfd)
+          if (d.kind === 'MF') {
+            const c = d.cfg as MFConfig;
+            const p =
+              c.mode === 'pressure' && typeof c.pressure_bar === 'number'
+                ? convPress(c.pressure_bar, unitMode, next)
+                : c.pressure_bar;
+            const filtrate =
+              typeof c.mf_filtrate_flux_lmh_25C === 'number'
+                ? convFlux(c.mf_filtrate_flux_lmh_25C, unitMode, next)
+                : c.mf_filtrate_flux_lmh_25C;
+            const backwash =
+              typeof c.mf_backwash_flux_lmh === 'number'
+                ? convFlux(c.mf_backwash_flux_lmh, unitMode, next)
+                : c.mf_backwash_flux_lmh;
+            return {
+              ...n,
+              data: {
+                ...d,
+                cfg: {
+                  ...c,
+                  pressure_bar: p,
+                  mf_filtrate_flux_lmh_25C: filtrate,
+                  mf_backwash_flux_lmh: backwash,
+                },
+              },
+            } as Node<FlowData>;
+          }
+
           if (d.kind === 'UF') {
             const c = d.cfg as UFConfig;
             const filtrate =
@@ -508,7 +546,6 @@ export function useFlowLogic() {
               typeof c.backwash_flux_lmh === 'number'
                 ? convFlux(c.backwash_flux_lmh, unitMode, next)
                 : c.backwash_flux_lmh;
-
             return {
               ...n,
               data: {
@@ -517,31 +554,6 @@ export function useFlowLogic() {
                   ...c,
                   filtrate_flux_lmh_25C: filtrate,
                   backwash_flux_lmh: backwash,
-                },
-              },
-            } as Node<FlowData>;
-          }
-
-          // MF flux conversions
-          if (d.kind === 'MF') {
-            const c = d.cfg as MFConfig;
-            const filtrate =
-              typeof c.mf_filtrate_flux_lmh_25C === 'number'
-                ? convFlux(c.mf_filtrate_flux_lmh_25C, unitMode, next)
-                : c.mf_filtrate_flux_lmh_25C;
-            const backwash =
-              typeof c.mf_backwash_flux_lmh === 'number'
-                ? convFlux(c.mf_backwash_flux_lmh, unitMode, next)
-                : c.mf_backwash_flux_lmh;
-
-            return {
-              ...n,
-              data: {
-                ...d,
-                cfg: {
-                  ...c,
-                  mf_filtrate_flux_lmh_25C: filtrate,
-                  mf_backwash_flux_lmh: backwash,
                 },
               },
             } as Node<FlowData>;
@@ -556,9 +568,6 @@ export function useFlowLogic() {
     [feed, setFeed, setNodes, unitMode],
   );
 
-  // ---------------------------------------------------------------------------
-  // Simulation RUN (Unified)
-  // ---------------------------------------------------------------------------
   const onRun = useCallback(async () => {
     setLoading(true);
     setErr(null);
@@ -566,7 +575,6 @@ export function useFlowLogic() {
     setChemSummary(null);
 
     try {
-      // chain check + auto repair
       let check = buildLinearChain(nodes, edges) as ChainOk | ChainErr;
       if (!check.ok) {
         const hypot = makeLinearEdges(nodes);
@@ -592,7 +600,8 @@ export function useFlowLogic() {
         );
       }
 
-      // Feed -> SI
+      const { chemistry, ions } = mapChemistryToBackend(feedChemistry);
+
       const feedSI: ApiFeedInput = {
         flow_m3h: convFlow(feed.flow_m3h, unitMode, 'SI'),
         tds_mgL: feed.tds_mgL,
@@ -602,14 +611,11 @@ export function useFlowLogic() {
           typeof feed.pressure_bar === 'number'
             ? convPress(feed.pressure_bar, unitMode, 'SI')
             : 0.0,
-
-        // WAVE meta
         water_type: feed.water_type ?? null,
-        water_subtype: feed.water_subtype ?? null,
-        turbidity_ntu: feed.turbidity_ntu ?? null,
-        tss_mgL: feed.tss_mgL ?? null,
-        sdi15: feed.sdi15 ?? null,
-        toc_mgL: feed.toc_mgL ?? null,
+        temp_min_C: feed.temp_min_C ?? null,
+        temp_max_C: feed.temp_max_C ?? null,
+        fouling: feed.fouling,
+        ions: ions ?? undefined,
       };
 
       const globals = {
@@ -617,15 +623,11 @@ export function useFlowLogic() {
         pumpEff: optPumpEff,
       };
 
-      // Stage payloads (always SI)
-      const stagesPayload = stageChain.map((n) =>
+      // 🛑 [MULTI-STAGE PATCH] 배열 평탄화(flatMap)를 통해 다단 배열 구조를 백엔드가 처리할 수 있도록 1차원 리스트로 풀어서 전송
+      const stagesPayload = stageChain.flatMap((n) =>
         toStagePayload(n, unitMode, globals),
       );
 
-      // chemistry/ions
-      const { chemistry, ions } = mapChemistryToBackend(feedChemistry);
-
-      // unified payload
       const payload: SimulationRequest = {
         simulation_id: cryptoRandomId(),
         project_id: resolveProjectId(),
@@ -640,17 +642,14 @@ export function useFlowLogic() {
           erd_eff: optErdEff,
         },
         chemistry: chemistry ?? null,
-        ions: ions ?? null,
       };
 
       const output = await runSimulation(payload);
-
-      // normalize + convert for display unitMode
       const outDisp = convertROutToDisplay(output as any, unitMode);
+
       setData(outDisp);
       setChemSummary((output as any).chemistry ?? null);
 
-      // apply chips by stage order
       applyStageChips(
         stageChain.map((n) => n.id),
         (outDisp as any)?.stage_metrics ?? null,
@@ -687,9 +686,6 @@ export function useFlowLogic() {
     setEdges,
   ]);
 
-  // ---------------------------------------------------------------------------
-  // Keyboard shortcuts (정석: ref로 최신 onRun 호출)
-  // ---------------------------------------------------------------------------
   const onRunRef = useRef<() => void>(() => {});
   useEffect(() => {
     onRunRef.current = onRun;
@@ -707,14 +703,12 @@ export function useFlowLogic() {
 
       const mod = e.ctrlKey || e.metaKey;
 
-      // Undo/Redo
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         e.shiftKey ? redo() : undo();
         return;
       }
 
-      // Run (Ctrl/Cmd + Enter)
       if (mod && e.key === 'Enter') {
         e.preventDefault();
         onRunRef.current?.();
@@ -723,7 +717,6 @@ export function useFlowLogic() {
 
       const u = selUnitRef.current;
 
-      // Delete selected unit (except mandatory nodes)
       if (
         (e.key === 'Delete' || e.key === 'Backspace') &&
         u &&
@@ -731,7 +724,6 @@ export function useFlowLogic() {
         u.id !== 'product'
       ) {
         e.preventDefault();
-        // ✅ 정석: 히스토리는 "변경 전" 스냅샷을 넣는다
         pushHistory();
         removeNode(u.id, setNodes as SetNodesFn, setEdges as SetEdgesFn);
         setSelectedNodeId(null);
@@ -739,7 +731,6 @@ export function useFlowLogic() {
         return;
       }
 
-      // Nudge by arrows
       if (u) {
         const step = e.shiftKey ? 6 : 1;
         if (
@@ -759,9 +750,6 @@ export function useFlowLogic() {
     return () => window.removeEventListener('keydown', onKey);
   }, [undo, redo, pushHistory, setNodes, setEdges]);
 
-  // ---------------------------------------------------------------------------
-  // Save / Load (LocalStorage)
-  // ---------------------------------------------------------------------------
   const saveLocal = useCallback(() => {
     const payload: PersistModel = {
       nodes,
@@ -800,7 +788,7 @@ export function useFlowLogic() {
       const p = JSON.parse(raw) as PersistModel;
       setNodes(ensureUnitCfg(p.nodes));
       setEdges(p.edges);
-      setFeed(p.feed);
+      setFeed(migrateFeedState(p.feed));
       setOptAuto(p.opt.auto);
       setOptMembrane(p.opt.membrane as any);
       setOptSegments(p.opt.segments);
@@ -871,7 +859,7 @@ export function useFlowLogic() {
 
       setNodes(ensureUnitCfg(e.nodes));
       setEdges(e.edges);
-      setFeed(e.feed);
+      setFeed(migrateFeedState(e.feed));
       setOptAuto(e.opt.auto);
       setOptMembrane(e.opt.membrane as any);
       setOptSegments(e.opt.segments);
@@ -919,21 +907,17 @@ export function useFlowLogic() {
 
   return {
     rfRef,
-
     unitMode,
     setUnitMode,
     scenarioName,
     setScenarioName,
-
     libraryOpen,
     setLibraryOpen,
     libraryItems,
-
     feed,
     setFeed,
     feedChemistry,
     setFeedChemistry,
-
     optAuto,
     setOptAuto,
     optMembrane,
@@ -944,40 +928,31 @@ export function useFlowLogic() {
     setOptPumpEff,
     optErdEff,
     setOptErdEff,
-
     nodes,
     setNodes,
     onNodesChange,
     edges,
     setEdges,
     onEdgesChange,
-
     selectedNodeId,
     setSelectedNodeId,
-
     loading,
     err,
-
     data,
     chemSummary,
-
     editorOpen,
     setEditorOpen,
     optionsOpen,
     setOptionsOpen,
     toast,
-
     canUndo: history.past.length > 0,
     canRedo: history.future.length > 0,
-
     selEndpoint,
     selUnit,
     stageTypeHint,
-
     pushToast,
     undo,
     redo,
-
     onDragStartPalette,
     onDragOver,
     onDrop,
@@ -985,10 +960,8 @@ export function useFlowLogic() {
     onNodeClick,
     onNodeDragStop,
     onEdgesDelete,
-
     toggleUnits,
     onRun,
-
     saveLocal,
     loadLocal,
     saveToLibrary,

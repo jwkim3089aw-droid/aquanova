@@ -102,8 +102,50 @@ export interface IonCompositionInput {
   // Metals
   Fe?: number | null;
   Mn?: number | null;
+  Al?: number | null; // 백엔드 매칭
 
   [k: string]: any;
+}
+
+// 🛑 [UF PATCH] WAVE 유지보수 및 세정 사이클 스펙 추가
+export interface UFMaintenanceConfig {
+  filtration_duration_min?: number | null;
+  acid_ceb_interval_h?: number | null;
+  alkali_ceb_interval_h?: number | null;
+  cip_interval_d?: number | null;
+  mini_cip_interval_d?: number | null;
+
+  backwash_duration_sec?: number | null;
+  air_scour_duration_sec?: number | null;
+  forward_flush_duration_sec?: number | null;
+
+  backwash_flux_lmh?: number | null;
+  ceb_flux_lmh?: number | null;
+  forward_flush_flow_m3h_per_mod?: number | null;
+  air_flow_nm3h_per_mod?: number | null;
+
+  integrity_test_min_day?: number | null;
+}
+
+// ======================
+// 🛑 [WAVE FEED PATCH] Feed Water Types & Fouling Sub-Models
+// ======================
+export type WAVEWaterType =
+  | 'RO/NF Well Water'
+  | 'RO/NF Surface Water'
+  | 'SD Seawater (Open Intake)'
+  | 'SD Seawater (Well)'
+  | 'WW Wastewater'
+  | 'City Water'
+  | (string & {});
+
+export interface FoulingIndicators {
+  tss_mgL?: number | null;
+  turbidity_ntu?: number | null;
+  sdi15?: number | null;
+  toc_mgL?: number | null;
+  cod_mgL?: number | null;
+  bod_mgL?: number | null;
 }
 
 // ======================
@@ -111,20 +153,21 @@ export interface IonCompositionInput {
 // ======================
 
 export interface FeedInput {
+  // 1. Physical Properties
+  water_type?: WAVEWaterType | null;
   flow_m3h: number;
-  tds_mgL: number;
   temperature_C: number;
+  temp_min_C?: number | null;
+  temp_max_C?: number | null;
   ph: number;
   pressure_bar?: number | null;
 
-  water_type?: string | null;
-  water_subtype?: string | null;
+  // 2. Fouling & Organics
+  fouling?: FoulingIndicators;
 
-  turbidity_ntu?: number | null;
-  tss_mgL?: number | null;
-  sdi15?: number | null;
-  toc_mgL?: number | null;
-
+  // 3. Detailed Chemical Composition (이동 완료!)
+  ions?: IonCompositionInput;
+  tds_mgL: number;
   chemistry?: Record<string, any> | null;
 }
 
@@ -149,6 +192,10 @@ export interface StageConfig {
   // Membrane Fouling / Aging
   flow_factor?: number | null; // Default: 0.85 (Aging Factor)
 
+  // 🛑 [UF PATCH] Strainer Settings
+  strainer_recovery_pct?: number | null;
+  strainer_size_micron?: number | null;
+
   // --- 3. Operating Conditions ---
   feed_flow_m3h?: number | null;
   pressure_bar?: number | null; // Operating Pressure
@@ -162,6 +209,11 @@ export interface StageConfig {
   burst_pressure_limit_bar?: number | null;
 
   flux_lmh?: number | null; // Target Flux (Alternative control)
+  design_flux_lmh?: number | null; // Target Filtrate Flux (UF)
+
+  temp_mode?: 'Minimum' | 'Design' | 'Maximum' | null;
+  bypass_flow_m3h?: number | null;
+  pre_stage_dp_bar?: number | null;
 
   // --- 4. HRRO / CCRO Specifics ---
   loop_volume_m3?: number | null;
@@ -174,15 +226,12 @@ export interface StageConfig {
   stop_permeate_tds_mgL?: number | null;
   stop_recovery_pct?: number | null; // Explicit stop condition
 
-  // Engine Settings
-  hrro_engine?: 'excel_only' | 'excel_physics';
-  hrro_excel_only_cp_mode?: 'min_model' | 'none' | 'fixed_rejection';
-  hrro_excel_only_fixed_rejection_pct?: number | null;
-  hrro_excel_only_min_model_rejection_pct?: number | null;
-
   // Physics Sub-models
   mass_transfer?: HRROMassTransferIn | null;
   spacer?: HRROSpacerIn | null;
+
+  // 🛑 [UF PATCH] Maintenance Nested Model
+  uf_maintenance?: UFMaintenanceConfig | null;
 
   // --- 5. Other / Legacy ---
   pf_feed_ratio_pct?: number | null;
@@ -192,7 +241,7 @@ export interface StageConfig {
   pump_eff?: number | null;
   ccro_recovery_pct?: number | null;
 
-  // UF/MF Backwash
+  // UF/MF Backwash (Legacy, kept for fallback)
   filtration_cycle_min?: number | null;
   backwash_duration_sec?: number | null;
   backwash_flux_multiplier?: number | null;
@@ -208,18 +257,36 @@ export interface SimulationRequest {
   project_id?: string;
   scenario_name?: string;
 
-  feed: FeedInput;
+  feed: FeedInput; // 이제 ions와 fouling이 feed 내부에 모두 포함됨
   stages: StageConfig[];
 
   options?: Record<string, any>;
-
   chemistry?: WaterChemistryInput | null;
-  ions?: IonCompositionInput | null;
 }
 
 // ======================
 // Outputs & Results
 // ======================
+
+export interface SimulationWarning {
+  stage?: string | null;
+  module_type?: string | null;
+  key: string;
+  message: string;
+  value?: number | null;
+  limit?: any | null;
+  unit: string;
+  level: string;
+}
+
+export interface MassBalanceOut {
+  flow_error_m3h: number;
+  flow_error_pct: number;
+  salt_error_kgh: number;
+  salt_error_pct: number;
+  system_rejection_pct?: number | null;
+  is_balanced: boolean;
+}
 
 export interface TimeSeriesPoint {
   time_min: number;
@@ -240,7 +307,13 @@ export interface ScalingIndexOut {
   s_dsi?: number | null;
   caco3_si?: number | null;
   caso4_si?: number | null;
+  baso4_si?: number | null;
+  srso4_si?: number | null;
+  caf2_si?: number | null;
   sio2_si?: number | null;
+  caso4_sat_pct?: number | null;
+  baso4_sat_pct?: number | null;
+  sio2_sat_pct?: number | null;
   [k: string]: any;
 }
 
@@ -256,6 +329,12 @@ export interface StageMetric {
   // KPIs
   recovery_pct?: number | null;
   flux_lmh?: number | null;
+
+  // 🛑 [UF PATCH] Extended Flux metrics
+  design_flux_lmh?: number | null;
+  instantaneous_flux_lmh?: number | null;
+  average_flux_lmh?: number | null;
+
   sec_kwhm3?: number | null;
   ndp_bar?: number | null;
 
@@ -283,6 +362,7 @@ export interface StageMetric {
 
   time_history?: TimeSeriesPoint[] | null;
   chemistry?: any;
+  warnings?: SimulationWarning[] | null;
 
   [k: string]: any;
 }
@@ -305,6 +385,7 @@ export interface KPIOut {
   prod_tds?: number | null;
   feed_m3h?: number | null;
   permeate_m3h?: number | null;
+  mass_balance?: MassBalanceOut | null;
 }
 
 export interface ScenarioOutput {
@@ -318,6 +399,7 @@ export interface ScenarioOutput {
 
   chemistry?: WaterChemistryOut | any;
   time_history?: TimeSeriesPoint[] | null;
+  warnings?: SimulationWarning[] | null;
 
   schema_version?: number;
 }

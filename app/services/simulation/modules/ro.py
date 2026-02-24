@@ -5,9 +5,7 @@ import math
 from typing import Any, Dict
 
 from app.services.simulation.modules.base import SimulationModule
-from app.api.v1.schemas import StageConfig, FeedInput, StageMetric, ModuleType
-
-P_PERM_BAR = 0.0  # permeate backpressure (atm-ish)
+from app.schemas.simulation import StageConfig, FeedInput, StageMetric, ModuleType
 
 
 def _f(v: Any, default: float) -> float:
@@ -36,55 +34,88 @@ def _osmotic_pressure_bar(conc_mgL: float, temp_c: float) -> float:
     """
     c_gL = max(0.0, conc_mgL) / 1000.0
     t_k = max(1.0, temp_c + 273.15)
-    # scale factor tuned for "reasonable" RO ranges (keeps your existing behavior)
+    # scale factor tuned for "reasonable" RO ranges
     return c_gL * 0.75 * (t_k / 298.15)
 
 
 class ROModule(SimulationModule):
     """
-    [RO Module]
+    [RO Module - Multi-stage & ISBP Patched]
     - Solution-Diffusion + simple CP
     - Fixed-point iteration on avg_conc (bulk average) for self-consistency
-    - chemistry["streams"] / chemistry["model"] 표준 출력 포함
-    - IMPORTANT: 수렴 후 최종 1회 재계산으로 ndp/flux/Cp/chemistry 값 일관성 보장
+    - Multi-stage support: Uses incoming feed_pressure_bar and applies pre_stage_dp / ISBP
+    - Fouling support: Scales A and B values using Flow Factor and SPI
     """
 
     def compute(self, config: StageConfig, feed: FeedInput) -> StageMetric:
         # -----------------------------
-        # Inputs
+        # 1. Inputs & Feed State
         # -----------------------------
         Qf_m3h = _f(getattr(feed, "flow_m3h", None), 0.0)
         Cf_mgL = _f(getattr(feed, "tds_mgL", None), 0.0)
         T_C = _f(getattr(feed, "temperature_C", None), 25.0)
+        feed_p_bar = max(0.0, _f(getattr(feed, "pressure_bar", None), 0.0))
 
-        # Geometry
+        # -----------------------------
+        # 2. Geometry & Fouling
+        # -----------------------------
         elements = max(1, int(_f(getattr(config, "elements", None), 1)))
         area_per_element = _f(getattr(config, "membrane_area_m2", None), 40.0)
         total_area = max(1e-9, elements * max(1e-9, area_per_element))
 
-        # Membrane params (units: LMH/bar and LMH)
-        A = max(0.0, _f(getattr(config, "membrane_A_lmh_bar", None), 3.0))
-        B_lmh = max(0.0, _f(getattr(config, "membrane_B_lmh", None), 0.1))
+        # 🛑 [FOULING PATCH] Apply Flow Factor (FF) and Salt Passage Increase (SPI)
+        flow_factor = _f(getattr(config, "flow_factor", None), 0.85)
+        spi = _f(getattr(config, "spi", None), 1.0)
 
-        # Pressure / DP
-        p_in_bar = max(0.0, _f(getattr(config, "pressure_bar", None), 15.0))
+        A_base = max(0.0, _f(getattr(config, "membrane_A_lmh_bar", None), 3.0))
+        B_base = max(0.0, _f(getattr(config, "membrane_B_lmh", None), 0.1))
+
+        A = A_base * flow_factor
+        B_lmh = B_base * spi
+
+        # -----------------------------
+        # 3. Hydraulics & ISBP (Multi-stage Logic)
+        # -----------------------------
+        target_p_in = getattr(config, "pressure_bar", None)
+        dp_pipe = max(0.0, _f(getattr(config, "pre_stage_dp_bar", None), 0.0))
+        p_boost = max(0.0, _f(getattr(config, "isbp_pressure_bar", None), 0.0))
+        permeate_bp = max(
+            0.0, _f(getattr(config, "permeate_back_pressure_bar", None), 0.0)
+        )
+
+        # Stage 1은 보통 target pressure를 직접 지정하고, Stage 2부터는 이전 농축수 압력을 상속받음
+        if target_p_in is not None and target_p_in > 0:
+            p_in_bar = float(target_p_in)
+        else:
+            p_in_bar = max(0.0, feed_p_bar - dp_pipe + p_boost)
+
+        # Module pressure drop
         dp_module = max(0.0, _f(getattr(config, "dp_module_bar", None), 0.2))
         dp_total = float(elements * dp_module)
         p_out_bar = max(0.0, p_in_bar - dp_total)
 
-        # Use average feed-side pressure across module
+        # Average driving pressure
         avg_pressure_bar = max(0.0, p_in_bar - dp_total / 2.0)
-        deltaP_bar = max(0.0, avg_pressure_bar - P_PERM_BAR)
+        deltaP_bar = max(0.0, avg_pressure_bar - permeate_bp)
 
-        # Early exit
+        # Early exit for invalid physical states
         if Qf_m3h <= 1e-12 or total_area <= 1e-12 or A <= 0.0:
             chem: Dict[str, Any] = {
                 "streams": {
-                    "feed": {"flow_m3h": float(Qf_m3h), "tds_mgL": float(Cf_mgL)},
-                    "permeate": {"flow_m3h": 0.0, "tds_mgL": 0.0},
+                    "feed": {
+                        "flow_m3h": float(Qf_m3h),
+                        "tds_mgL": float(Cf_mgL),
+                        "pressure_bar": float(p_in_bar),
+                    },
+                    "permeate": {
+                        "flow_m3h": 0.0,
+                        "tds_mgL": 0.0,
+                        "pressure_bar": float(permeate_bp),
+                    },
                     "concentrate": {
                         "flow_m3h": float(Qf_m3h),
                         "tds_mgL": float(Cf_mgL),
+                        "pressure_bar": float(p_out_bar),
                     },
                 },
                 "model": {
@@ -92,7 +123,7 @@ class ROModule(SimulationModule):
                     "avg_pressure_bar": float(avg_pressure_bar),
                     "avg_conc_mgL": float(Cf_mgL),
                     "cp_factor_last": 1.0,
-                    "p_perm_bar": float(P_PERM_BAR),
+                    "p_perm_bar": float(permeate_bp),
                     "delta_p_bar": float(deltaP_bar),
                     "pi_cm_bar": float(_osmotic_pressure_bar(Cf_mgL, T_C)),
                     "delta_pi_bar": float(_osmotic_pressure_bar(Cf_mgL, T_C)),
@@ -118,19 +149,16 @@ class ROModule(SimulationModule):
             )
 
         # -----------------------------
-        # Fixed-point iteration on avg_conc
+        # 4. Fixed-point iteration on avg_conc
         # -----------------------------
-        # Start with mild CP-ish guess
         avg_conc_mgL = max(0.0, Cf_mgL * 1.2)
 
-        # Tunables
         max_iter = 20
         tol_rel = 0.01
-        min_conc_frac = 0.05  # keep concentrate nonzero: Qp <= 95% of Qf
-        cp_scale = 150.0  # same spirit as your code
-        cp_max = 5.0  # avoid crazy CP amplification
+        min_conc_frac = 0.05
+        cp_scale = 150.0
+        cp_max = 5.0
 
-        # Placeholders for last iteration
         last_flux_lmh = 0.0
         last_cp_factor = 1.0
         last_cm_mgL = avg_conc_mgL
@@ -142,38 +170,27 @@ class ROModule(SimulationModule):
         last_cc_mgL = Cf_mgL
 
         for _ in range(max_iter):
-            # compute using current avg_conc guess
-            # Step 1) (temporary) flux based on pi at membrane surface (cm)
-            # We model cm via CP factor depending on flux; use a quick inner consistency:
-            # First assume cm ~ avg_conc, compute a provisional flux, then update cm once.
             pi_bulk_bar = _osmotic_pressure_bar(avg_conc_mgL, T_C)
-
-            # provisional ndp/flux using bulk pi
             ndp_prov = max(0.0, deltaP_bar - pi_bulk_bar)
             flux_prov = A * ndp_prov
 
-            # CP update (bounded)
             cp_factor = _safe_exp(flux_prov / cp_scale) if flux_prov > 0 else 1.0
             cp_factor = _clamp(cp_factor, 1.0, cp_max)
             cm_mgL = max(0.0, avg_conc_mgL * cp_factor)
 
-            # use membrane-surface pi for final ndp/flux this iteration
             pi_cm_bar = _osmotic_pressure_bar(cm_mgL, T_C)
             ndp_bar = max(0.0, deltaP_bar - pi_cm_bar)
             flux_lmh = A * ndp_bar
 
-            # permeate concentration (Solution-Diffusion)
             if (flux_lmh + B_lmh) > 1e-12:
                 Cp_mgL = (B_lmh * cm_mgL) / (flux_lmh + B_lmh)
             else:
                 Cp_mgL = 0.0
 
             Cp_mgL = max(0.0, Cp_mgL)
-            # Enforce non-negative rejection vs bulk feed (stops Cp > Cf warnings)
             if Cf_mgL > 0:
                 Cp_mgL = min(Cp_mgL, Cf_mgL)
 
-            # flow from flux
             qp_m3h = (flux_lmh * total_area) / 1000.0
             if qp_m3h > Qf_m3h * (1.0 - min_conc_frac):
                 qp_m3h = Qf_m3h * (1.0 - min_conc_frac)
@@ -181,15 +198,12 @@ class ROModule(SimulationModule):
 
             qc_m3h = max(1e-12, Qf_m3h - qp_m3h)
 
-            # concentrate salt balance
             Cc_mgL = (Qf_m3h * Cf_mgL - qp_m3h * Cp_mgL) / qc_m3h
             Cc_mgL = max(0.0, Cc_mgL)
 
-            # Update avg concentration estimate
             new_avg = (Cf_mgL + Cc_mgL) / 2.0
             rel = abs(new_avg - avg_conc_mgL) / max(1e-12, avg_conc_mgL)
 
-            # keep last iteration results for debugging (optional)
             last_flux_lmh = flux_lmh
             last_cp_factor = cp_factor
             last_cm_mgL = cm_mgL
@@ -205,7 +219,7 @@ class ROModule(SimulationModule):
                 break
 
         # -----------------------------
-        # FINAL recompute with converged avg_conc_mgL (self-consistent output)
+        # 5. FINAL recompute with converged avg_conc_mgL
         # -----------------------------
         pi_bulk_bar = _osmotic_pressure_bar(avg_conc_mgL, T_C)
         ndp_prov = max(0.0, deltaP_bar - pi_bulk_bar)
@@ -243,33 +257,55 @@ class ROModule(SimulationModule):
         recovery_frac = (qp_m3h / Qf_m3h) if Qf_m3h > 1e-12 else 0.0
         recovery_pct = recovery_frac * 100.0
 
-        # Energy
-        pump_eff = _clamp(_f(getattr(config, "pump_eff", None), 0.80), 0.2, 0.95)
-        power_kw = (
-            ((Qf_m3h * p_in_bar) / 36.0 / pump_eff)
-            if (Qf_m3h > 0 and p_in_bar > 0)
-            else 0.0
-        )
-        sec_kwhm3 = (power_kw / qp_m3h) if qp_m3h > 1e-12 else 0.0
+        # -----------------------------
+        # 6. Energy & Power (ISBP Patched)
+        # -----------------------------
+        # 해당 스테이지에서 "추가로 부여한" 압력만큼만 에너지를 계산합니다.
+        # (이전 단의 잔여 압력은 에너지를 쓰지 않음)
+        boost_added = max(0.0, p_in_bar - feed_p_bar)
 
-        delta_pi_bar = pi_cm_bar  # since permeate side assumed ~0 osmotic
+        pump_eff = _clamp(_f(getattr(config, "pump_eff", None), 0.80), 0.2, 0.95)
+        isbp_eff = _clamp(
+            _f(getattr(config, "isbp_eff_pct", None), 80.0) / 100.0, 0.2, 0.95
+        )
+
+        # 원수(Raw Feed)에서 끌어올리면 메인 HPP 효율을, 단간 부스팅이면 ISBP 효율을 사용
+        eff_used = pump_eff if feed_p_bar < 5.0 else isbp_eff
+
+        power_kw = 0.0
+        if Qf_m3h > 0 and boost_added > 0:
+            power_kw = (Qf_m3h * boost_added) / 36.0 / eff_used
+
+        sec_kwhm3 = (power_kw / qp_m3h) if qp_m3h > 1e-12 else 0.0
+        delta_pi_bar = pi_cm_bar
 
         chem: Dict[str, Any] = {
             "streams": {
-                "feed": {"flow_m3h": float(Qf_m3h), "tds_mgL": float(Cf_mgL)},
-                "permeate": {"flow_m3h": float(qp_m3h), "tds_mgL": float(Cp_mgL)},
-                "concentrate": {"flow_m3h": float(qc_m3h), "tds_mgL": float(Cc_mgL)},
+                "feed": {
+                    "flow_m3h": float(Qf_m3h),
+                    "tds_mgL": float(Cf_mgL),
+                    "pressure_bar": float(p_in_bar),
+                },
+                "permeate": {
+                    "flow_m3h": float(qp_m3h),
+                    "tds_mgL": float(Cp_mgL),
+                    "pressure_bar": float(permeate_bp),
+                },
+                "concentrate": {
+                    "flow_m3h": float(qc_m3h),
+                    "tds_mgL": float(Cc_mgL),
+                    "pressure_bar": float(p_out_bar),
+                },
             },
             "model": {
                 "dp_total_bar": float(dp_total),
                 "avg_pressure_bar": float(avg_pressure_bar),
                 "avg_conc_mgL": float(avg_conc_mgL),
                 "cp_factor_last": float(cp_factor),
-                "p_perm_bar": float(P_PERM_BAR),
+                "p_perm_bar": float(permeate_bp),
                 "delta_p_bar": float(deltaP_bar),
                 "pi_cm_bar": float(pi_cm_bar),
                 "delta_pi_bar": float(delta_pi_bar),
-                # last iteration debug hint (optional)
                 "debug_last_iter": {
                     "flux_lmh": float(last_flux_lmh),
                     "cp_factor": float(last_cp_factor),
@@ -285,7 +321,7 @@ class ROModule(SimulationModule):
         }
 
         return StageMetric(
-            stage=0,  # engine에서 overwrite
+            stage=0,  # engine 루프에서 인덱스 덮어씌움
             module_type=ModuleType.RO,
             recovery_pct=round(recovery_pct, 2),
             flux_lmh=round(flux_lmh, 2),

@@ -35,17 +35,17 @@ export function SystemWarningsPanel({
   stages: any[];
   globalWarnings?: any[];
 }) {
-  // ✅ 백엔드에서 받은 globalWarnings가 있으면 그것을 사용, 없으면 기존처럼 수집
-  const rows = globalWarnings?.length
-    ? globalWarnings
-    : collectViolationsByStage(stages);
+  // ✅ 백엔드에서 넘겨준 globalWarnings(스케일링 등)를 병합
+  const collected = collectViolationsByStage(stages);
+  const rows =
+    globalWarnings && globalWarnings.length > 0 ? globalWarnings : collected;
 
   if (!rows.length) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 p-2 border border-emerald-900/30 bg-emerald-950/10 rounded">
         <Badge text="NO WARN" tone="emerald" />
-        <div className="text-[10px] text-slate-500">
-          No system warnings. Operations are within guidelines.
+        <div className="text-[10px] text-emerald-600/80 font-bold">
+          No system warnings detected. Operations are within design guidelines.
         </div>
       </div>
     );
@@ -53,13 +53,16 @@ export function SystemWarningsPanel({
 
   const maxRows = 30;
   const slice = rows.slice(0, maxRows);
-  const tone = rows.length > 0 ? 'rose' : 'emerald';
+  const isCritical = rows.length > 2;
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Badge text={`WARN ${rows.length}`} tone={tone as any} />
-        <div className="text-[10px] text-slate-500">
+      <div className="flex items-center gap-2 mb-1">
+        <Badge
+          text={`${rows.length} WARNINGS`}
+          tone={isCritical ? 'rose' : 'amber'}
+        />
+        <div className="text-[10px] text-slate-500 font-medium">
           System Guideline Violations (Showing up to {maxRows})
         </div>
       </div>
@@ -68,28 +71,38 @@ export function SystemWarningsPanel({
         <div className="overflow-x-auto">
           <table className={THEME.TABLE}>
             <thead>
-              <tr>
+              <tr className="bg-rose-950/20">
                 <th className={THEME.TH}>Stage</th>
                 <th className={THEME.TH}>Type</th>
-                <th className={THEME.TH}>Message</th>
+                <th className={THEME.TH}>Warning Message</th>
                 <th className={THEME.TH}>Value</th>
                 <th className={THEME.TH}>Limit</th>
               </tr>
             </thead>
             <tbody>
               {slice.map((r, i) => (
-                <tr key={i} className={THEME.TR}>
-                  <td className={THEME.TD_LABEL}>{r.stage}</td>
-                  <td className={THEME.TD}>{r.module_type}</td>
+                <tr
+                  key={i}
+                  className={`${THEME.TR} border-l-2 border-l-rose-500`}
+                >
+                  <td className={`${THEME.TD_LABEL} font-bold text-slate-300`}>
+                    {r.stage || 'SYS'}
+                  </td>
+                  <td className={THEME.TD}>{r.module_type || '-'}</td>
                   <td className={THEME.TD}>
-                    <div className="font-sans font-semibold text-[10px] text-rose-600">
+                    <div className="font-sans font-bold text-[10.5px] text-rose-500">
                       {r.message}
                     </div>
                   </td>
-                  <td className={THEME.TD}>
-                    {String(r.value ?? '-')} {r.unit}
+                  <td className={`${THEME.TD} font-mono text-slate-300`}>
+                    {typeof r.value === 'number'
+                      ? r.value.toFixed(2)
+                      : String(r.value ?? '-')}{' '}
+                    <span className="text-[9px]">{r.unit}</span>
                   </td>
-                  <td className={THEME.TD}>{String(r.limit ?? '-')}</td>
+                  <td className={`${THEME.TD} font-mono text-slate-500`}>
+                    {String(r.limit ?? '-')}
+                  </td>
                 </tr>
               ))}
             </tbody>

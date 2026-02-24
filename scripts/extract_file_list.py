@@ -1,3 +1,4 @@
+# app/scripts/extract_file_list.py
 import os
 from pathlib import Path
 
@@ -10,8 +11,8 @@ def list_code_files():
     # 탐색할 루트 경로 (한 단계 위인 .../code)
     target_root_path = current_script_path.parent
 
-    # 2. 찾고자 하는 코드 파일 확장자 설정 (필요에 따라 추가/삭제 하세요)
-    # 예: C/C++, Python, Web 관련 등
+    # 2. 찾고자 하는 코드 파일 확장자 설정
+    # 🛑 [수정됨] React UI 컴포넌트 확장자(.tsx, .jsx) 추가!
     CODE_EXTENSIONS = {
         ".py",
         ".c",
@@ -20,6 +21,8 @@ def list_code_files():
         ".hpp",
         ".js",
         ".ts",
+        ".tsx",  # <-- 추가됨! (React TypeScript 컴포넌트)
+        ".jsx",  # <-- 추가됨! (React JavaScript 컴포넌트)
         ".html",
         ".css",
         ".java",

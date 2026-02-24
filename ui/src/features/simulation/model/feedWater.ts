@@ -1,112 +1,88 @@
 // ui/src/features/simulation/model/feedWater.ts
 // Feed water type utilities (UI <-> backend enum alignment)
+import { WAVEWaterType } from '../../../api/types';
 
-// 백엔드 FeedWaterType 호환성을 위해 키값 자체는 유지하되, 화면에 표시될 때(Label)는 WAVE 명칭을 따름
-export type FeedWaterType =
-  | 'Seawater'
-  | 'Brackish'
-  | 'Surface'
-  | 'Groundwater'
-  | 'Wastewater'
-  | 'Other';
-
-export type WaterTypeOption = { value: FeedWaterType; label: string };
+export type WaterTypeOption = { value: WAVEWaterType; label: string };
 
 // 🛑 WAVE UI의 Water Type 콤보박스와 100% 매칭
 export const WATER_TYPE_OPTIONS: WaterTypeOption[] = [
-  { value: 'Other', label: 'RO Permeate' },
-  { value: 'Brackish', label: 'Municipal Water' },
-  { value: 'Groundwater', label: 'Well Water' },
-  { value: 'Surface', label: 'Surface Water' },
-  { value: 'Seawater', label: 'Seawater' },
-  { value: 'Wastewater', label: 'Wastewater' },
+  { value: 'RO/NF Well Water', label: 'Well Water (RO/NF)' },
+  { value: 'RO/NF Surface Water', label: 'Surface Water (RO/NF)' },
+  { value: 'SD Seawater (Open Intake)', label: 'Seawater (Open Intake)' },
+  { value: 'SD Seawater (Well)', label: 'Seawater (Well)' },
+  { value: 'WW Wastewater', label: 'Wastewater' },
+  { value: 'City Water', label: 'City Water' },
 ];
 
-export const WATER_TYPE_LABEL: Record<FeedWaterType, string> = {
-  Other: 'RO Permeate',
-  Brackish: 'Municipal Water',
-  Groundwater: 'Well Water',
-  Surface: 'Surface Water',
-  Seawater: 'Seawater',
-  Wastewater: 'Wastewater',
+export const WATER_TYPE_LABEL: Record<WAVEWaterType, string> = {
+  'RO/NF Well Water': 'Well Water (RO/NF)',
+  'RO/NF Surface Water': 'Surface Water (RO/NF)',
+  'SD Seawater (Open Intake)': 'Seawater (Open Intake)',
+  'SD Seawater (Well)': 'Seawater (Well)',
+  'WW Wastewater': 'Wastewater',
+  'City Water': 'City Water',
 };
 
-export function isFeedWaterType(v: unknown): v is FeedWaterType {
+export function isFeedWaterType(v: unknown): v is WAVEWaterType {
   return (
-    v === 'Seawater' ||
-    v === 'Brackish' ||
-    v === 'Surface' ||
-    v === 'Groundwater' ||
-    v === 'Wastewater' ||
-    v === 'Other'
+    v === 'RO/NF Well Water' ||
+    v === 'RO/NF Surface Water' ||
+    v === 'SD Seawater (Open Intake)' ||
+    v === 'SD Seawater (Well)' ||
+    v === 'WW Wastewater' ||
+    v === 'City Water'
   );
 }
 
 /**
  * ✅ 백엔드 enum 정석화
- * - 과거 데이터(한글/별칭/대소문자/카테고리 문자열)를 FeedWaterType으로 정규화
+ * - 과거 데이터(한글/별칭/대소문자/카테고리 문자열)를 WAVEWaterType으로 정규화
  * - WAVE 카테고리에 맞게 똑똑하게 파싱
  */
-export function normalizeWaterType(v: unknown): FeedWaterType | null {
+export function normalizeWaterType(v: unknown): WAVEWaterType | null {
   if (v == null) return null;
 
   const raw = String(v).trim();
   if (!raw) return null;
 
-  if (isFeedWaterType(raw)) return raw;
+  if (isFeedWaterType(raw)) return raw as WAVEWaterType;
 
   const s = raw.toLowerCase();
 
   // Seawater
-  if (s === 'sea' || s === 'seawater' || s === 'ocean' || raw.includes('해수'))
-    return 'Seawater';
+  if (s.includes('sea') || s.includes('ocean') || raw.includes('해수')) {
+    return s.includes('well')
+      ? 'SD Seawater (Well)'
+      : 'SD Seawater (Open Intake)';
+  }
 
-  // Municipal (Brackish)
+  // City / Municipal
   if (
-    s === 'municipal' ||
-    s === 'municipal water' ||
-    s === 'brackish' ||
-    raw.includes('기수')
-  )
-    return 'Brackish';
+    s.includes('city') ||
+    s.includes('municipal') ||
+    raw.includes('수돗물') ||
+    raw.includes('상수도')
+  ) {
+    return 'City Water';
+  }
 
   // Surface Water
-  if (
-    s === 'surface' ||
-    s === 'surfacewater' ||
-    s === 'river' ||
-    raw.includes('지표수')
-  )
-    return 'Surface';
+  if (s.includes('surface') || s.includes('river') || raw.includes('지표수')) {
+    return 'RO/NF Surface Water';
+  }
 
   // Well Water (Groundwater)
-  if (
-    s === 'well' ||
-    s === 'well water' ||
-    s === 'groundwater' ||
-    raw.includes('지하수')
-  )
-    return 'Groundwater';
+  if (s.includes('well') || s.includes('ground') || raw.includes('지하수')) {
+    return 'RO/NF Well Water';
+  }
 
   // Wastewater
-  if (
-    s === 'waste' ||
-    s === 'wastewater' ||
-    s === 'industrial' ||
-    raw.includes('폐수')
-  )
-    return 'Wastewater';
+  if (s.includes('waste') || s.includes('industrial') || raw.includes('폐수')) {
+    return 'WW Wastewater';
+  }
 
-  // RO Permeate (Other)
-  if (
-    s === 'ro permeate' ||
-    s === 'permeate' ||
-    s === 'reuse' ||
-    raw.includes('재이용')
-  )
-    return 'Other';
-
-  return null;
+  // Default Fallback
+  return 'RO/NF Well Water';
 }
 
 // ----------------------
@@ -122,7 +98,7 @@ export type WaterCatalogPreset = {
   desc?: string;
   temp_C?: number;
   ph?: number;
-  water_type?: FeedWaterType | string | null;
+  water_type?: WAVEWaterType | string | null;
   water_subtype?: string | null;
   ions?: IonMap | null;
   [k: string]: unknown;
@@ -138,7 +114,7 @@ export function computeTdsMgL(ions: IonMap): number {
   return sum;
 }
 
-export function resolveWaterType(preset: WaterCatalogPreset): FeedWaterType {
+export function resolveWaterType(preset: WaterCatalogPreset): WAVEWaterType {
   const normalized = normalizeWaterType(preset.water_type);
   if (normalized) return normalized;
 
@@ -146,13 +122,13 @@ export function resolveWaterType(preset: WaterCatalogPreset): FeedWaterType {
     .trim()
     .toLowerCase();
 
-  if (cat === 'seawater') return 'Seawater';
-  if (cat.includes('municipal') || cat === 'brackish') return 'Brackish';
-  if (cat === 'surface') return 'Surface';
-  if (cat.includes('well') || cat === 'groundwater') return 'Groundwater';
-  if (cat.includes('waste')) return 'Wastewater';
+  if (cat.includes('sea')) return 'SD Seawater (Open Intake)';
+  if (cat.includes('municipal') || cat.includes('city')) return 'City Water';
+  if (cat.includes('surface')) return 'RO/NF Surface Water';
+  if (cat.includes('well') || cat.includes('ground')) return 'RO/NF Well Water';
+  if (cat.includes('waste')) return 'WW Wastewater';
 
-  return 'Other';
+  return 'RO/NF Well Water';
 }
 
 export function resolveWaterSubtype(preset: WaterCatalogPreset): string {

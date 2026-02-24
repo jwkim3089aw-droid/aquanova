@@ -1,4 +1,3 @@
-// ui\src\features\simulation\model\logic.ts
 // ui/src/features/simulation/model/logic.ts
 import { MarkerType, type Edge, type Node } from 'reactflow';
 
@@ -25,6 +24,7 @@ import type {
   MFConfig,
   NFConfig,
   ROConfig,
+  MembraneStageConfig, // 🛑 [MULTI-STAGE PATCH] 추가
 } from './types';
 
 import {
@@ -319,22 +319,22 @@ export function bulkApply(
 // ==============================
 
 function metricFluxSI(m: StageMetric): number | null {
-  const v = m.flux_lmh ?? m.jw_avg_lmh;
+  const v = m.flux_lmh ?? (m as any).jw_avg_lmh;
   return typeof v === 'number' ? v : null;
 }
 
 function metricSec(m: StageMetric): number | null {
-  const v = m.sec_kwhm3 ?? m.sec_kwh_m3;
+  const v = m.sec_kwhm3 ?? (m as any).sec_kwh_m3;
   return typeof v === 'number' ? v : null;
 }
 
 function metricPin(m: StageMetric): number | null {
-  const v = m.p_in_bar ?? m.pin;
+  const v = m.p_in_bar ?? (m as any).pin;
   return typeof v === 'number' ? v : null;
 }
 
 function metricPout(m: StageMetric): number | null {
-  const v = m.p_out_bar ?? m.pout;
+  const v = m.p_out_bar ?? (m as any).pout;
   return typeof v === 'number' ? v : null;
 }
 
@@ -445,20 +445,17 @@ function getMemParams(c: any) {
 
 /**
  * Convert a unit node -> backend StageConfig (always SI internally).
- * - pressure: bar
- * - flow: m3/h
- * - flux: LMH
+ * 🛑 [MULTI-STAGE PATCH] Returns an array of StageConfig objects instead of one
  */
 export function toStagePayload(
   n: UnitNode,
   currentUnitMode: UnitMode,
   globals?: { defaultMembraneModel?: string; pumpEff?: number },
-): StageConfig {
+): StageConfig[] {
   const d = n.data as UnitData;
   const kind = (d as any).kind as UnitKind;
   const c = (d as any).cfg as any;
 
-  // global membrane fallback (catalog)
   const globalMem = globals?.defaultMembraneModel;
   if (c?.membrane_mode !== 'custom') {
     if (!c?.membrane_model && globalMem && globalMem !== 'AUTO') {
@@ -466,85 +463,66 @@ export function toStagePayload(
     }
   }
 
-  // 1) pressure SI (bar)
-  let pressureVal = 15.0;
-  if (kind === 'HRRO') pressureVal = num((c as HRROConfig).p_set_bar, 60);
-  else if (c?.mode === 'pressure') pressureVal = num(c.pressure_bar, 15);
-
-  if (currentUnitMode !== 'SI') {
-    pressureVal = convPress(num(pressureVal, 15), 'US', 'SI');
-  }
-
-  // 2) HRRO
+  // 1) HRRO
   if (kind === 'HRRO') {
     const cfg = c as HRROConfig;
+    let pressureVal = num(cfg.p_set_bar, 60);
+    if (currentUnitMode !== 'SI')
+      pressureVal = convPress(pressureVal, 'US', 'SI');
 
     const stopRec =
       Number(cfg.stop_recovery_pct) ||
       Number((cfg as any).recovery_target_pct) ||
       90.0;
 
-    return {
-      stage_id: n.id,
-      module_type: 'HRRO',
-      elements: clampInt(cfg.elements, 1, 24),
-
-      pressure_bar: Number(pressureVal),
-
-      // closed-loop
-      loop_volume_m3: num(cfg.loop_volume_m3, 2),
-      recirc_flow_m3h: num(cfg.recirc_flow_m3h, 12),
-      bleed_m3h: num(cfg.bleed_m3h, 0),
-      timestep_s: clampInt(cfg.timestep_s, 1, 60),
-      max_minutes: num(cfg.max_minutes, 60),
-      stop_permeate_tds_mgL: cfg.stop_permeate_tds_mgL ?? null,
-
-      // hard stop (critical)
-      stop_recovery_pct: stopRec,
-      recovery_target_pct: stopRec,
-
-      // excel inputs
-      hrro_engine: cfg.hrro_engine ?? 'excel_only',
-      hrro_excel_only_cp_mode: cfg.hrro_excel_only_cp_mode ?? 'min_model',
-      hrro_excel_only_fixed_rejection_pct:
-        cfg.hrro_excel_only_fixed_rejection_pct ?? 99.5,
-      hrro_excel_only_min_model_rejection_pct:
-        cfg.hrro_excel_only_min_model_rejection_pct ?? null,
-
-      element_inch: cfg.element_inch ?? 8,
-      vessel_count: cfg.vessel_count ?? 1,
-      elements_per_vessel: cfg.elements_per_vessel ?? cfg.elements ?? 6,
-
-      feed_flow_m3h: cfg.feed_flow_m3h ?? null,
-      ccro_recovery_pct: cfg.ccro_recovery_pct ?? null,
-      pf_feed_ratio_pct: cfg.pf_feed_ratio_pct ?? 110.0,
-      pf_recovery_pct: cfg.pf_recovery_pct ?? 10.0,
-      cc_recycle_m3h_per_pv: cfg.cc_recycle_m3h_per_pv ?? null,
-      membrane_area_m2_per_element: cfg.membrane_area_m2_per_element ?? null,
-
-      pump_eff: cfg.pump_eff ?? globals?.pumpEff ?? 0.8,
-
-      mass_transfer: cfg.mass_transfer ?? null,
-      spacer: cfg.spacer ?? null,
-
-      ...getMemParams(cfg),
-    };
+    return [
+      {
+        stage_id: n.id,
+        module_type: 'HRRO',
+        elements: clampInt(cfg.elements, 1, 24),
+        pressure_bar: Number(pressureVal),
+        loop_volume_m3: num(cfg.loop_volume_m3, 2),
+        recirc_flow_m3h: num(cfg.recirc_flow_m3h, 12),
+        bleed_m3h: num(cfg.bleed_m3h, 0),
+        timestep_s: clampInt(cfg.timestep_s, 1, 60),
+        max_minutes: num(cfg.max_minutes, 60),
+        stop_permeate_tds_mgL: cfg.stop_permeate_tds_mgL ?? null,
+        stop_recovery_pct: stopRec,
+        recovery_target_pct: stopRec,
+        hrro_engine: cfg.hrro_engine ?? 'excel_only',
+        hrro_excel_only_cp_mode: cfg.hrro_excel_only_cp_mode ?? 'min_model',
+        hrro_excel_only_fixed_rejection_pct:
+          cfg.hrro_excel_only_fixed_rejection_pct ?? 99.5,
+        hrro_excel_only_min_model_rejection_pct:
+          cfg.hrro_excel_only_min_model_rejection_pct ?? null,
+        element_inch: cfg.element_inch ?? 8,
+        vessel_count: cfg.vessel_count ?? 1,
+        elements_per_vessel: cfg.elements_per_vessel ?? cfg.elements ?? 6,
+        feed_flow_m3h: cfg.feed_flow_m3h ?? null,
+        ccro_recovery_pct: cfg.ccro_recovery_pct ?? null,
+        pf_feed_ratio_pct: cfg.pf_feed_ratio_pct ?? 110.0,
+        pf_recovery_pct: cfg.pf_recovery_pct ?? 10.0,
+        cc_recycle_m3h_per_pv: cfg.cc_recycle_m3h_per_pv ?? null,
+        membrane_area_m2_per_element: cfg.membrane_area_m2_per_element ?? null,
+        pump_eff: cfg.pump_eff ?? globals?.pumpEff ?? 0.8,
+        mass_transfer: cfg.mass_transfer ?? null,
+        spacer: cfg.spacer ?? null,
+        ...getMemParams(cfg),
+      },
+    ];
   }
 
-  // 3) UF/MF (flux in SI LMH)
+  // 2) UF/MF
   if (kind === 'UF' || kind === 'MF') {
     const isUF = kind === 'UF';
     const uf = c as UFConfig;
     const mf = c as MFConfig;
-
     const filtrateFluxDisp = isUF
       ? num(uf.filtrate_flux_lmh_25C, 60)
       : num(mf.mf_filtrate_flux_lmh_25C, 60);
     const backwashFluxDisp = isUF
       ? num(uf.backwash_flux_lmh, 120)
       : num(mf.mf_backwash_flux_lmh, 120);
-
-    // convert gfd -> LMH when in US mode
     const filtrateFluxSI =
       currentUnitMode === 'SI'
         ? filtrateFluxDisp
@@ -554,44 +532,125 @@ export function toStagePayload(
         ? backwashFluxDisp
         : convFlux(backwashFluxDisp, 'US', 'SI');
 
-    return {
-      stage_id: n.id,
-      module_type: kind,
-      elements: clampInt(c.elements, 1, 24),
-
-      // not pressure-controlled; keep >=0
-      pressure_bar: 0.0,
-
-      flux_lmh: filtrateFluxSI,
-      backwash_flux_lmh: backwashFluxSI,
-
-      filtration_cycle_min: isUF
-        ? num(uf.filtration_duration_min, 30)
-        : num(mf.mf_filtration_duration_min, 30),
-
-      backwash_duration_sec: isUF
-        ? num(uf.uf_backwash_duration_s, 60)
-        : num(mf.mf_backwash_duration_s, 60),
-
-      ...getMemParams(c),
-    };
+    return [
+      {
+        stage_id: n.id,
+        module_type: kind,
+        elements: clampInt(c.elements, 1, 24),
+        pressure_bar: 0.0,
+        flux_lmh: filtrateFluxSI,
+        backwash_flux_lmh: backwashFluxSI,
+        filtration_cycle_min: isUF
+          ? num(uf.filtration_duration_min, 30)
+          : num(mf.mf_filtration_duration_min, 30),
+        backwash_duration_sec: isUF
+          ? num(uf.uf_backwash_duration_s, 60)
+          : num(mf.mf_backwash_duration_s, 60),
+        ...getMemParams(c),
+      },
+    ];
   }
 
-  // 4) RO/NF standard
-  return {
-    stage_id: n.id,
-    module_type: kind,
-    elements: clampInt(c.elements, 1, 24),
+  // 3) RO/NF Multi-stage mapping (🛑 [MULTI-STAGE PATCH] 핵심 로직)
+  const rnf = c as ROConfig;
+  const opMode = rnf.mode || 'recovery';
 
-    pressure_bar: Number(pressureVal),
+  let sysPressureVal = num(rnf.pressure_bar, 15);
+  if (currentUnitMode !== 'SI')
+    sysPressureVal = convPress(sysPressureVal, 'US', 'SI');
 
-    recovery_target_pct:
-      c?.mode === 'recovery' ? num(c.recovery_target_pct, 50) : undefined,
+  let backPressSI = num(rnf.permeate_back_pressure_bar, 0);
+  let flowTargetSI = num(rnf.flow_target_m3h, 50);
+  if (currentUnitMode !== 'SI') {
+    backPressSI = convPress(backPressSI, 'US', 'SI');
+    flowTargetSI = convFlow(flowTargetSI, 'US', 'SI');
+  }
 
-    pump_eff: globals?.pumpEff ?? undefined,
+  const results: StageConfig[] = [];
 
-    ...getMemParams(c),
-  };
+  // 만약 신규 다단(stages array) 데이터가 있다면
+  if (rnf.stages && rnf.stages.length > 0) {
+    rnf.stages.forEach((stg: MembraneStageConfig, idx: number) => {
+      let stageDpSI = num(stg.pre_stage_dp_bar, 0);
+      let stageIsbpSI = num(stg.isbp_pressure_bar, 0);
+
+      if (currentUnitMode !== 'SI') {
+        stageDpSI = convPress(stageDpSI, 'US', 'SI');
+        stageIsbpSI = convPress(stageIsbpSI, 'US', 'SI');
+      }
+
+      results.push({
+        stage_id: n.id,
+        stage_idx: stg.stage_idx || idx + 1,
+        module_type: kind,
+
+        elements: clampInt(
+          (stg.vessel_count || 1) * (stg.elements_per_vessel || 6),
+          1,
+          10000,
+        ),
+        vessel_count: stg.vessel_count ?? 1,
+        elements_per_vessel: stg.elements_per_vessel ?? 6,
+
+        flow_factor: stg.flow_factor ?? 0.85,
+        spi: stg.spi ?? 1.1,
+
+        pre_stage_dp_bar: stageDpSI,
+        isbp_pressure_bar: stageIsbpSI,
+        isbp_eff_pct: stg.isbp_eff_pct ?? 80.0,
+        permeate_back_pressure_bar: backPressSI,
+
+        mode: opMode,
+        pressure_bar:
+          idx === 0 && opMode === 'pressure'
+            ? Number(sysPressureVal)
+            : undefined,
+        recovery_target_pct:
+          idx === 0 && opMode === 'recovery'
+            ? num(rnf.recovery_target_pct, 50)
+            : undefined,
+        flow_target_m3h:
+          idx === 0 && opMode === 'flow' ? flowTargetSI : undefined,
+
+        pump_eff: globals?.pumpEff ?? undefined,
+        ...getMemParams(c),
+      });
+    });
+  }
+  // 구형 단일(Migration) 데이터라면
+  else {
+    let dpSI = num(rnf.pre_stage_dp_bar, 0.3);
+    if (currentUnitMode !== 'SI') dpSI = convPress(dpSI, 'US', 'SI');
+
+    results.push({
+      stage_id: n.id,
+      stage_idx: 1,
+      module_type: kind,
+
+      elements: clampInt(rnf.elements, 1, 10000),
+      vessel_count: rnf.vessel_count ?? 1,
+      elements_per_vessel: rnf.elements_per_vessel ?? rnf.elements ?? 6,
+
+      flow_factor: rnf.flow_factor ?? 0.85,
+      spi: rnf.spi ?? 1.1,
+
+      pre_stage_dp_bar: dpSI,
+      isbp_pressure_bar: 0.0,
+      isbp_eff_pct: 80.0,
+      permeate_back_pressure_bar: backPressSI,
+
+      mode: opMode,
+      pressure_bar: opMode === 'pressure' ? Number(sysPressureVal) : undefined,
+      recovery_target_pct:
+        opMode === 'recovery' ? num(rnf.recovery_target_pct, 50) : undefined,
+      flow_target_m3h: opMode === 'flow' ? flowTargetSI : undefined,
+
+      pump_eff: globals?.pumpEff ?? undefined,
+      ...getMemParams(c),
+    });
+  }
+
+  return results;
 }
 
 // ==============================
@@ -604,7 +663,6 @@ function normalizeTimeHistory(
   if (!ts || !Array.isArray(ts)) return ts ?? null;
   return ts.map((p) => ({
     ...p,
-    // ensure optional fields exist as-is
     flux_lmh: p.flux_lmh ?? null,
     ndp_bar: p.ndp_bar ?? null,
     permeate_flow_m3h: p.permeate_flow_m3h ?? null,
@@ -729,7 +787,6 @@ export function convertScenarioOutToDisplay(
     }));
   }
 
-  // scenario time_history conversions
   if (cp.time_history) {
     cp.time_history = cp.time_history.map((p) => ({
       ...p,
@@ -755,7 +812,6 @@ export function convertScenarioOutToDisplay(
   return cp;
 }
 
-// legacy exported name used by current screens
 export const convertROutToDisplay = convertScenarioOutToDisplay;
 
 // ==============================

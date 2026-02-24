@@ -1,3 +1,4 @@
+// ui/src/features/simulation/components/FeedInspectorBody.tsx
 import React from 'react';
 import { Field, Input } from '..';
 import { WATER_CATALOG } from '../data/water_catalog';
@@ -14,6 +15,7 @@ import { useFeedPreset } from '../hooks/useFeedPreset';
 import { useSaltQuickEntry, type QuickState } from '../hooks/useSaltQuickEntry';
 import { useChargeBalanceActions } from '../hooks/useChargeBalanceActions';
 import type { FeedDerived } from '../hooks/useFeedChargeBalance';
+import { WATER_TYPE_OPTIONS } from '../model/feedWater';
 
 // 헬퍼 함수
 function num0(s: string): number {
@@ -55,7 +57,7 @@ export function FeedInspectorBody(props: any) {
     derived,
   } = props;
 
-  const { waterTypeOptions, subtypeSuggestions, applyPreset } = useFeedPreset(
+  const { subtypeSuggestions, applyPreset } = useFeedPreset(
     localFeed,
     setLocalFeed,
     setLocalChem,
@@ -67,6 +69,9 @@ export function FeedInspectorBody(props: any) {
     cbMode,
     setLocalChem,
   );
+
+  // fouling 객체가 없을 때를 대비한 헬퍼
+  const fouling = localFeed.fouling || {};
 
   return (
     <div className="h-full w-full grid grid-cols-12 gap-3">
@@ -81,7 +86,7 @@ export function FeedInspectorBody(props: any) {
           <option value="" disabled>
             -- 프리셋 불러오기 --
           </option>
-          <optgroup label="해수">
+          <optgroup label="해수 (Seawater)">
             {WATER_CATALOG.filter((w) => w.category === 'Seawater').map((w) => (
               <option key={w.id} value={w.id}>
                 {w.name}
@@ -115,7 +120,7 @@ export function FeedInspectorBody(props: any) {
                 }
               >
                 <option value="">Select Type...</option>
-                {waterTypeOptions.map((o) => (
+                {WATER_TYPE_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
@@ -232,7 +237,7 @@ export function FeedInspectorBody(props: any) {
         </Card>
 
         {/* 3. Solid & Organic Content (WAVE 중앙 - 항상 노출) */}
-        <Card title="Solid & Organic Content" className="shrink-0">
+        <Card title="Fouling & Organics" className="shrink-0">
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] text-slate-500">
@@ -240,11 +245,14 @@ export function FeedInspectorBody(props: any) {
               </span>
               <Input
                 className="h-6 w-14 text-right font-mono text-xs"
-                value={localFeed.turbidity_ntu ?? ''}
+                value={fouling.turbidity_ntu ?? ''}
                 onChange={(e) =>
                   setLocalFeed((p: any) => ({
                     ...p,
-                    turbidity_ntu: numOrNull(e.target.value),
+                    fouling: {
+                      ...p.fouling,
+                      turbidity_ntu: numOrNull(e.target.value),
+                    },
                   }))
                 }
               />
@@ -253,24 +261,27 @@ export function FeedInspectorBody(props: any) {
               <span className="text-[10px] text-slate-500">TSS (mg/L)</span>
               <Input
                 className="h-6 w-14 text-right font-mono text-xs"
-                value={localFeed.tss_mgL ?? ''}
+                value={fouling.tss_mgL ?? ''}
                 onChange={(e) =>
                   setLocalFeed((p: any) => ({
                     ...p,
-                    tss_mgL: numOrNull(e.target.value),
+                    fouling: {
+                      ...p.fouling,
+                      tss_mgL: numOrNull(e.target.value),
+                    },
                   }))
                 }
               />
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-500">SDI 15</span>
+              <span className="text-[10px] text-slate-500">SDI (15 min)</span>
               <Input
                 className="h-6 w-14 text-right font-mono text-xs"
-                value={localFeed.sdi15 ?? ''}
+                value={fouling.sdi15 ?? ''}
                 onChange={(e) =>
                   setLocalFeed((p: any) => ({
                     ...p,
-                    sdi15: numOrNull(e.target.value),
+                    fouling: { ...p.fouling, sdi15: numOrNull(e.target.value) },
                   }))
                 }
               />
@@ -279,11 +290,46 @@ export function FeedInspectorBody(props: any) {
               <span className="text-[10px] text-slate-500">TOC (mg/L)</span>
               <Input
                 className="h-6 w-14 text-right font-mono text-xs"
-                value={localFeed.toc_mgL ?? ''}
+                value={fouling.toc_mgL ?? ''}
                 onChange={(e) =>
                   setLocalFeed((p: any) => ({
                     ...p,
-                    toc_mgL: numOrNull(e.target.value),
+                    fouling: {
+                      ...p.fouling,
+                      toc_mgL: numOrNull(e.target.value),
+                    },
+                  }))
+                }
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-500">COD (mg/L)</span>
+              <Input
+                className="h-6 w-14 text-right font-mono text-xs"
+                value={fouling.cod_mgL ?? ''}
+                onChange={(e) =>
+                  setLocalFeed((p: any) => ({
+                    ...p,
+                    fouling: {
+                      ...p.fouling,
+                      cod_mgL: numOrNull(e.target.value),
+                    },
+                  }))
+                }
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-500">BOD (mg/L)</span>
+              <Input
+                className="h-6 w-14 text-right font-mono text-xs"
+                value={fouling.bod_mgL ?? ''}
+                onChange={(e) =>
+                  setLocalFeed((p: any) => ({
+                    ...p,
+                    fouling: {
+                      ...p.fouling,
+                      bod_mgL: numOrNull(e.target.value),
+                    },
                   }))
                 }
               />

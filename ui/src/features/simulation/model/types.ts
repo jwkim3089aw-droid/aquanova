@@ -25,19 +25,69 @@ export type BaseMembraneConfig = {
   pump_efficiency_pct?: number;
 };
 
+// 🛑 [MULTI-STAGE PATCH] Stage-specific configuration for RO/NF arrays
+export type MembraneStageConfig = {
+  stage_idx: number; // 1, 2, 3...
+  vessel_count: number; // 병렬 베셀 수 (WAVE의 Nx)
+  elements_per_vessel: number; // 베셀 당 막 개수 (보통 6~8)
+  elements: number; // vessel_count * elements_per_vessel
+
+  flow_factor: number; // Fouling 계수 (통상 0.85)
+  spi: number; // Salt Passage Increase (염 투과 증가율)
+
+  pre_stage_dp_bar: number; // 전단 배관/필터 마찰 손실 (bar)
+  isbp_pressure_bar: number; // 단간 부스터 펌프(ISBP) 승압 (bar) - Stage 2부터 주로 사용
+  isbp_eff_pct: number; // ISBP 펌프 효율 (%)
+
+  [k: string]: any;
+};
+
+// 🛑 [WAVE PATCH] ROConfig 고도화: Array, Ageing, Hydraulics
 export type ROConfig = BaseMembraneConfig & {
-  elements: number;
-  mode: 'pressure' | 'recovery';
+  // 1. Array Configuration (다단 구조)
+  num_stages: number; // 총 스테이지 수 (UI 탭 개수 결정, 1~3)
+  stages: MembraneStageConfig[]; // 다단 배열 데이터
+
+  // 2. Control Mode & Targets (전체 시스템 기준)
+  mode: 'pressure' | 'recovery' | 'flow';
   pressure_bar?: number;
   recovery_target_pct?: number;
+  flow_target_m3h?: number;
+
+  // 3. Hydraulics & Fouling (시스템 공통 설정)
+  permeate_back_pressure_bar?: number;
+  age_years?: number;
+
+  // --- 하위 호환성 (Migration용: 옛날 단일 Stage 포맷 유지) ---
+  elements?: number;
+  vessel_count?: number;
+  elements_per_vessel?: number;
+  flow_factor?: number;
+  spi?: number;
+  pre_stage_dp_bar?: number;
+
   [k: string]: any;
 };
 
 export type NFConfig = BaseMembraneConfig & {
-  elements: number;
-  mode: 'pressure' | 'recovery';
+  num_stages: number;
+  stages: MembraneStageConfig[];
+
+  mode: 'pressure' | 'recovery' | 'flow';
   pressure_bar?: number;
   recovery_target_pct?: number;
+  flow_target_m3h?: number;
+
+  permeate_back_pressure_bar?: number;
+  age_years?: number;
+
+  elements?: number;
+  vessel_count?: number;
+  elements_per_vessel?: number;
+  flow_factor?: number;
+  spi?: number;
+  pre_stage_dp_bar?: number;
+
   [k: string]: any;
 };
 
@@ -143,11 +193,9 @@ export type SetEdgesFn = Dispatch<SetStateAction<Edge[]>>;
 // ==========================================================
 
 export type ChemistryInput = {
-  // scaling inputs
   alkalinity_mgL_as_CaCO3: number | null;
   calcium_hardness_mgL_as_CaCO3: number | null;
 
-  // --- Cations (+) ---
   nh4_mgL?: number | null;
   k_mgL?: number | null;
   na_mgL?: number | null;
@@ -155,11 +203,9 @@ export type ChemistryInput = {
   ca_mgL?: number | null;
   sr_mgL?: number | null;
   ba_mgL?: number | null;
-  // Non-WAVE (kept for compatibility, UI will hide by default)
   fe_mgL?: number | null;
   mn_mgL?: number | null;
 
-  // --- Anions (-) ---
   co3_mgL?: number | null;
   hco3_mgL?: number | null;
   no3_mgL?: number | null;
@@ -169,12 +215,10 @@ export type ChemistryInput = {
   br_mgL?: number | null;
   po4_mgL?: number | null;
 
-  // --- Neutrals ---
   sio2_mgL?: number | null;
   b_mgL?: number | null;
   co2_mgL?: number | null;
 
-  // legacy support
   sulfate_mgL?: number | null;
   barium_mgL?: number | null;
   strontium_mgL?: number | null;
@@ -205,30 +249,24 @@ export type ChemistrySummary = {
 // ==========================================================
 
 export type FeedState = {
-  // Flow & Basic
   flow_m3h: number;
   tds_mgL: number;
   ph: number;
   pressure_bar?: number;
 
-  // WAVE Temperature (3 points)
-  temperature_C: number; // Design Temp
+  temperature_C: number;
   temp_min_C: number | null;
   temp_max_C: number | null;
 
-  // WAVE Water Meta
   water_type?: string | null;
   water_subtype?: string | null;
 
-  // WAVE Solid Content
   turbidity_ntu: number | null;
   tss_mgL: number | null;
   sdi15: number | null;
 
-  // WAVE Organic Content
   toc_mgL: number | null;
 
-  // UI preference
   feed_note?: string | null;
   charge_balance_mode?: ChargeBalanceMode | null;
 
