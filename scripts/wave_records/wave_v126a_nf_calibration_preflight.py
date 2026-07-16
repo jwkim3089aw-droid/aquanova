@@ -259,7 +259,14 @@ def main() -> int:
     missing = max(0, 15 - len(rows))
 
     print("\nRECOMMENDATION")
-    print("status=INSUFFICIENT" if len(rows) < 8 else "status=EXPANSION_REQUIRED")
+
+    if len(rows) < 8:
+        print("status=INSUFFICIENT")
+    elif len(rows) < 15:
+        print("status=EXPANSION_REQUIRED")
+    else:
+        print("status=MINIMUM_ANCHOR_COUNT_REACHED")
+
     print("recommended_minimum_nf_records=15")
     print(f"additional_records_needed={missing}")
 
@@ -269,3 +276,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
