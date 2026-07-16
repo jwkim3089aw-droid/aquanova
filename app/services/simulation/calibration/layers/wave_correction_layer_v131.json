@@ -1,0 +1,762 @@
+{
+  "models": [
+    {
+      "holdout_corrected_mean_abs_error_pct": 10.257726,
+      "holdout_improvement_pct": 65.626955,
+      "holdout_n": 15,
+      "metric": "feed_pressure",
+      "model_id": "v92_ccro_feed_pressure_nonlinear_recovery_flux",
+      "model_payload": {
+        "coefficients": {
+          "aquanova_raw_value": 3.9166855595523113,
+          "aquanova_raw_x_flux_lmh": 6.8693412149986335,
+          "aquanova_raw_x_recovery_frac": -4.333271830160818,
+          "flux_lmh": 2.818140139910641,
+          "intercept": 17.333898305084738,
+          "recovery_frac": -1.165794297109772
+        },
+        "description": "raw/recovery/flux interactions",
+        "feature_names": [
+          "aquanova_raw_value",
+          "recovery_frac",
+          "flux_lmh",
+          "aquanova_raw_x_recovery_frac",
+          "aquanova_raw_x_flux_lmh"
+        ],
+        "feature_stats": {
+          "aquanova_raw_value": {
+            "mean": 12.73186440677966,
+            "std": 5.520803329710568
+          },
+          "aquanova_raw_x_flux_lmh": {
+            "mean": 443.06049152542374,
+            "std": 363.397989709437
+          },
+          "aquanova_raw_x_recovery_frac": {
+            "mean": 10.49380220338983,
+            "std": 4.601501502639118
+          },
+          "flux_lmh": {
+            "mean": 28.940677966101696,
+            "std": 14.638469386552677
+          },
+          "recovery_frac": {
+            "mean": 0.834677966101695,
+            "std": 0.11049556179107048
+          }
+        },
+        "intercept": true,
+        "model_type": "nonlinear_recovery_flux"
+      },
+      "model_type": "nonlinear_recovery_flux",
+      "nonnegative_output": true,
+      "process_type": "ccro",
+      "runtime_enabled": false,
+      "train_corrected_mean_abs_error_pct": 10.082002,
+      "train_n": 59
+    },
+    {
+      "holdout_corrected_mean_abs_error_pct": 7.769717,
+      "holdout_improvement_pct": 86.760937,
+      "holdout_n": 15,
+      "metric": "final_concentrate_tds",
+      "model_id": "v92_ccro_final_concentrate_tds_nonlinear_operating",
+      "model_payload": {
+        "coefficients": {
+          "aquanova_raw_value": -770.7834350410714,
+          "aquanova_raw_x_flux_lmh": -532.7537965158435,
+          "aquanova_raw_x_pf_feed_ratio_frac": -1648.0000880383088,
+          "aquanova_raw_x_recovery_frac": 3679.035224583456,
+          "aquanova_raw_x_temperature_c": -770.783435056211,
+          "flux_lmh": 634.5774670491251,
+          "intercept": 3960.4745762711855,
+          "is_stress_case_num": -113.93046021089172,
+          "pass_count": 894.5705147459549,
+          "pf_feed_ratio_frac": 1371.220551290799,
+          "recovery_frac": 233.3857206291694,
+          "stage_count": 0.0,
+          "temperature_c": 0.0
+        },
+        "description": "operating interactions",
+        "feature_names": [
+          "aquanova_raw_value",
+          "recovery_frac",
+          "flux_lmh",
+          "temperature_c",
+          "pf_feed_ratio_frac",
+          "pass_count",
+          "stage_count",
+          "is_stress_case_num",
+          "aquanova_raw_x_recovery_frac",
+          "aquanova_raw_x_flux_lmh",
+          "aquanova_raw_x_temperature_c",
+          "aquanova_raw_x_pf_feed_ratio_frac"
+        ],
+        "feature_stats": {
+          "aquanova_raw_value": {
+            "mean": 1677.9781355932203,
+            "std": 477.6616940800667
+          },
+          "aquanova_raw_x_flux_lmh": {
+            "mean": 44401.007169491524,
+            "std": 21458.1996681541
+          },
+          "aquanova_raw_x_pf_feed_ratio_frac": {
+            "mean": 2756.222593220339,
+            "std": 1631.9389149498206
+          },
+          "aquanova_raw_x_recovery_frac": {
+            "mean": 1444.5825645762711,
+            "std": 511.95296315435695
+          },
+          "aquanova_raw_x_temperature_c": {
+            "mean": 25169.672033898303,
+            "std": 7164.925411201
+          },
+          "flux_lmh": {
+            "mean": 28.940677966101696,
+            "std": 14.638469386552677
+          },
+          "is_stress_case_num": {
+            "mean": 0.01694915254237288,
+            "std": 0.12908090009938827
+          },
+          "pass_count": {
+            "mean": 1.2372881355932204,
+            "std": 0.4254203524749537
+          },
+          "pf_feed_ratio_frac": {
+            "mean": 1.571186440677966,
+            "std": 0.656661006230978
+          },
+          "recovery_frac": {
+            "mean": 0.834677966101695,
+            "std": 0.11049556179107048
+          },
+          "stage_count": {
+            "mean": 1.0,
+            "std": 1.0
+          },
+          "temperature_c": {
+            "mean": 15.0,
+            "std": 1.0
+          }
+        },
+        "intercept": true,
+        "model_type": "nonlinear_operating"
+      },
+      "model_type": "nonlinear_operating",
+      "nonnegative_output": true,
+      "process_type": "ccro",
+      "runtime_enabled": false,
+      "train_corrected_mean_abs_error_pct": 4.442175,
+      "train_n": 59
+    },
+    {
+      "holdout_corrected_mean_abs_error_pct": 10.016857,
+      "holdout_improvement_pct": 48.671643,
+      "holdout_n": 15,
+      "metric": "specific_energy",
+      "model_id": "v92_ccro_specific_energy_nonlinear_recovery_flux",
+      "model_payload": {
+        "coefficients": {
+          "aquanova_raw_value": 0.02723716532357378,
+          "aquanova_raw_x_flux_lmh": 0.30892598910143415,
+          "aquanova_raw_x_recovery_frac": -0.05707329935842201,
+          "flux_lmh": 0.0710852909781492,
+          "intercept": 0.6166101694915254,
+          "recovery_frac": 0.007820199864089786
+        },
+        "description": "raw/recovery/flux interactions",
+        "feature_names": [
+          "aquanova_raw_value",
+          "recovery_frac",
+          "flux_lmh",
+          "aquanova_raw_x_recovery_frac",
+          "aquanova_raw_x_flux_lmh"
+        ],
+        "feature_stats": {
+          "aquanova_raw_value": {
+            "mean": 0.5154237288135594,
+            "std": 0.27716679206460515
+          },
+          "aquanova_raw_x_flux_lmh": {
+            "mean": 18.877118644067796,
+            "std": 16.312650170836527
+          },
+          "aquanova_raw_x_recovery_frac": {
+            "mean": 0.41156406779661014,
+            "std": 0.20473725737230725
+          },
+          "flux_lmh": {
+            "mean": 28.940677966101696,
+            "std": 14.638469386552677
+          },
+          "recovery_frac": {
+            "mean": 0.834677966101695,
+            "std": 0.11049556179107048
+          }
+        },
+        "intercept": true,
+        "model_type": "nonlinear_recovery_flux"
+      },
+      "model_type": "nonlinear_recovery_flux",
+      "nonnegative_output": true,
+      "process_type": "ccro",
+      "runtime_enabled": false,
+      "train_corrected_mean_abs_error_pct": 8.783683,
+      "train_n": 59
+    },
+    {
+      "holdout_corrected_mean_abs_error_pct": 8.42392,
+      "holdout_improvement_pct": 24.523353,
+      "holdout_n": 8,
+      "metric": "feed_pressure",
+      "model_id": "v92_ro_feed_pressure_nonlinear_operating",
+      "model_payload": {
+        "coefficients": {
+          "aquanova_raw_value": 7.142951034159985,
+          "aquanova_raw_x_flux_lmh": 3.9104691600004235,
+          "aquanova_raw_x_pf_feed_ratio_frac": 0.0,
+          "aquanova_raw_x_recovery_frac": -3.2116081617527357,
+          "aquanova_raw_x_temperature_c": -8.3390491020184,
+          "flux_lmh": -0.6163871006742939,
+          "intercept": 13.065624999999999,
+          "is_stress_case_num": -0.16773659295494397,
+          "pass_count": -0.34779442910460623,
+          "pf_feed_ratio_frac": 0.0,
+          "recovery_frac": 0.7673883310764662,
+          "stage_count": 0.8570450220984209,
+          "temperature_c": 3.1105957139137543
+        },
+        "description": "operating interactions",
+        "feature_names": [
+          "aquanova_raw_value",
+          "recovery_frac",
+          "flux_lmh",
+          "temperature_c",
+          "pf_feed_ratio_frac",
+          "pass_count",
+          "stage_count",
+          "is_stress_case_num",
+          "aquanova_raw_x_recovery_frac",
+          "aquanova_raw_x_flux_lmh",
+          "aquanova_raw_x_temperature_c",
+          "aquanova_raw_x_pf_feed_ratio_frac"
+        ],
+        "feature_stats": {
+          "aquanova_raw_value": {
+            "mean": 12.31125,
+            "std": 3.796531459766928
+          },
+          "aquanova_raw_x_flux_lmh": {
+            "mean": 396.060125,
+            "std": 113.49560928372405
+          },
+          "aquanova_raw_x_pf_feed_ratio_frac": {
+            "mean": 0.0,
+            "std": 1.0
+          },
+          "aquanova_raw_x_recovery_frac": {
+            "mean": 8.45194065625,
+            "std": 3.1010996121579564
+          },
+          "aquanova_raw_x_temperature_c": {
+            "mean": 301.4165625,
+            "std": 92.22896217970846
+          },
+          "flux_lmh": {
+            "mean": 33.84375,
+            "std": 7.49266047125452
+          },
+          "is_stress_case_num": {
+            "mean": 0.125,
+            "std": 0.33071891388307384
+          },
+          "pass_count": {
+            "mean": 1.09375,
+            "std": 0.2914805954090255
+          },
+          "pf_feed_ratio_frac": {
+            "mean": 0.0,
+            "std": 1.0
+          },
+          "recovery_frac": {
+            "mean": 0.68221875,
+            "std": 0.08180186977348074
+          },
+          "stage_count": {
+            "mean": 1.40625,
+            "std": 0.9636964965693297
+          },
+          "temperature_c": {
+            "mean": 25.0,
+            "std": 4.5069390943299865
+          }
+        },
+        "intercept": true,
+        "model_type": "nonlinear_operating"
+      },
+      "model_type": "nonlinear_operating",
+      "nonnegative_output": true,
+      "process_type": "ro",
+      "runtime_enabled": false,
+      "train_corrected_mean_abs_error_pct": 9.829297,
+      "train_n": 32
+    },
+    {
+      "holdout_corrected_mean_abs_error_pct": 7.115171,
+      "holdout_improvement_pct": 57.287738,
+      "holdout_n": 8,
+      "metric": "specific_energy",
+      "model_id": "v92_ro_specific_energy_nonlinear_operating",
+      "model_payload": {
+        "coefficients": {
+          "aquanova_raw_value": -0.03625272921788625,
+          "aquanova_raw_x_flux_lmh": 0.20584211492146035,
+          "aquanova_raw_x_pf_feed_ratio_frac": 0.0,
+          "aquanova_raw_x_recovery_frac": 0.07333863208512303,
+          "aquanova_raw_x_temperature_c": -0.27089852294173355,
+          "flux_lmh": -0.057287468045277505,
+          "intercept": 0.6231249999999999,
+          "is_stress_case_num": -0.00012958014302583924,
+          "pass_count": -0.023213217548989945,
+          "pf_feed_ratio_frac": 0.0,
+          "recovery_frac": -0.05730245433238268,
+          "stage_count": 0.02851079595608546,
+          "temperature_c": 0.03798424836701319
+        },
+        "description": "operating interactions",
+        "feature_names": [
+          "aquanova_raw_value",
+          "recovery_frac",
+          "flux_lmh",
+          "temperature_c",
+          "pf_feed_ratio_frac",
+          "pass_count",
+          "stage_count",
+          "is_stress_case_num",
+          "aquanova_raw_x_recovery_frac",
+          "aquanova_raw_x_flux_lmh",
+          "aquanova_raw_x_temperature_c",
+          "aquanova_raw_x_pf_feed_ratio_frac"
+        ],
+        "feature_stats": {
+          "aquanova_raw_value": {
+            "mean": 0.61396875,
+            "std": 0.19901719215544544
+          },
+          "aquanova_raw_x_flux_lmh": {
+            "mean": 19.672103125,
+            "std": 5.680930514200796
+          },
+          "aquanova_raw_x_pf_feed_ratio_frac": {
+            "mean": 0.0,
+            "std": 1.0
+          },
+          "aquanova_raw_x_recovery_frac": {
+            "mean": 0.4185993125,
+            "std": 0.15186964266403719
+          },
+          "aquanova_raw_x_temperature_c": {
+            "mean": 14.93375,
+            "std": 4.541016199596738
+          },
+          "flux_lmh": {
+            "mean": 33.84375,
+            "std": 7.49266047125452
+          },
+          "is_stress_case_num": {
+            "mean": 0.125,
+            "std": 0.33071891388307384
+          },
+          "pass_count": {
+            "mean": 1.09375,
+            "std": 0.2914805954090255
+          },
+          "pf_feed_ratio_frac": {
+            "mean": 0.0,
+            "std": 1.0
+          },
+          "recovery_frac": {
+            "mean": 0.68221875,
+            "std": 0.08180186977348074
+          },
+          "stage_count": {
+            "mean": 1.40625,
+            "std": 0.9636964965693297
+          },
+          "temperature_c": {
+            "mean": 25.0,
+            "std": 4.5069390943299865
+          }
+        },
+        "intercept": true,
+        "model_type": "nonlinear_operating"
+      },
+      "model_type": "nonlinear_operating",
+      "nonnegative_output": true,
+      "process_type": "ro",
+      "runtime_enabled": false,
+      "train_corrected_mean_abs_error_pct": 9.881345,
+      "train_n": 32
+    },
+    {
+      "model_id": "v130_nf270_feed_pressure_scale_only",
+      "process_type": "nf",
+      "metric": "feed_pressure",
+      "model_type": "scale_only",
+      "regime": "nf_standard",
+      "runtime_enabled": true,
+      "validation_mode": "runtime_candidate",
+      "nonnegative_output": true,
+      "applicability": {
+        "membrane_family": "NF270",
+        "membrane_models": [
+          "NF270",
+          "NF270-400",
+          "NF270-400/34",
+          "FilmTec NF270",
+          "FilmTec NF270-400",
+          "FilmTec NF270-400/34"
+        ]
+      },
+      "model_payload": {
+        "description": "raw*k",
+        "feature_names": [],
+        "intercept": false,
+        "model_type": "scale_only",
+        "scale_factor": 1.3334576267425846
+      },
+      "performance": {
+        "selection_score": 1.007443,
+        "train_raw_mean_abs_error_pct": 25.090552,
+        "train_corrected_mean_abs_error_pct": 0.757443,
+        "train_improvement_pct": 96.981162,
+        "holdout_raw_mean_abs_error_pct": 25.462332,
+        "holdout_corrected_mean_abs_error_pct": 0.764707,
+        "holdout_improvement_pct": 96.996713,
+        "holdout_corrected_p90_abs_error_pct": 1.188654,
+        "train_n": 5,
+        "holdout_n": 3,
+        "negative_prediction_count": 0
+      },
+      "source": {
+        "candidate_file": "scripts/wave_records/results/_report_corpus/v129_nf270_v91_model_candidates.csv",
+        "v91_recommended": true,
+        "v91_promotion_status": "review_required",
+        "v91_promotion_flags": "insufficient_anchor_count"
+      },
+      "selection_reason": "V91 recommended; simple scale model with sub-1% holdout error"
+    },
+    {
+      "model_id": "v130_nf270_product_tds_affine_raw",
+      "process_type": "nf",
+      "metric": "product_tds",
+      "model_type": "affine_raw",
+      "regime": "nf_standard",
+      "runtime_enabled": true,
+      "validation_mode": "runtime_candidate",
+      "nonnegative_output": true,
+      "applicability": {
+        "membrane_family": "NF270",
+        "membrane_models": [
+          "NF270",
+          "NF270-400",
+          "NF270-400/34",
+          "FilmTec NF270",
+          "FilmTec NF270-400",
+          "FilmTec NF270-400/34"
+        ]
+      },
+      "model_payload": {
+        "coefficients": {
+          "aquanova_raw_value": 44.00070630560139,
+          "intercept": 257.66
+        },
+        "description": "intercept + raw",
+        "feature_names": [
+          "aquanova_raw_value"
+        ],
+        "feature_stats": {
+          "aquanova_raw_value": {
+            "mean": 433.60200000000003,
+            "std": 165.01528115904907
+          }
+        },
+        "intercept": true,
+        "model_type": "affine_raw"
+      },
+      "performance": {
+        "selection_score": 7.766706,
+        "train_raw_mean_abs_error_pct": 62.531246,
+        "train_corrected_mean_abs_error_pct": 7.266706,
+        "train_improvement_pct": 88.379079,
+        "holdout_raw_mean_abs_error_pct": 55.911653,
+        "holdout_corrected_mean_abs_error_pct": 5.113064,
+        "holdout_improvement_pct": 90.855101,
+        "holdout_corrected_p90_abs_error_pct": 6.471214,
+        "train_n": 5,
+        "holdout_n": 3,
+        "negative_prediction_count": 0
+      },
+      "source": {
+        "candidate_file": "scripts/wave_records/results/_report_corpus/v129_nf270_v91_model_candidates.csv",
+        "v91_recommended": true,
+        "v91_promotion_status": "review_required",
+        "v91_promotion_flags": "insufficient_anchor_count"
+      },
+      "selection_reason": "V91 recommended; membrane-specific quality model required"
+    },
+    {
+      "model_id": "v130_nf270_specific_energy_scale_only",
+      "process_type": "nf",
+      "metric": "specific_energy",
+      "model_type": "scale_only",
+      "regime": "nf_standard",
+      "runtime_enabled": true,
+      "validation_mode": "runtime_candidate",
+      "nonnegative_output": true,
+      "applicability": {
+        "membrane_family": "NF270",
+        "membrane_models": [
+          "NF270",
+          "NF270-400",
+          "NF270-400/34",
+          "FilmTec NF270",
+          "FilmTec NF270-400",
+          "FilmTec NF270-400/34"
+        ]
+      },
+      "model_payload": {
+        "description": "raw*k",
+        "feature_names": [],
+        "intercept": false,
+        "model_type": "scale_only",
+        "scale_factor": 1.5678265196310994
+      },
+      "performance": {
+        "selection_score": 1.704111,
+        "train_raw_mean_abs_error_pct": 36.188745,
+        "train_corrected_mean_abs_error_pct": 1.454111,
+        "train_improvement_pct": 95.98187,
+        "holdout_raw_mean_abs_error_pct": 34.991646,
+        "holdout_corrected_mean_abs_error_pct": 1.921822,
+        "holdout_improvement_pct": 94.50777,
+        "holdout_corrected_p90_abs_error_pct": 2.238793,
+        "train_n": 5,
+        "holdout_n": 3,
+        "negative_prediction_count": 0
+      },
+      "source": {
+        "candidate_file": "scripts/wave_records/results/_report_corpus/v129_nf270_v91_model_candidates.csv",
+        "v91_recommended": true,
+        "v91_promotion_status": "review_required",
+        "v91_promotion_flags": "insufficient_anchor_count"
+      },
+      "selection_reason": "V91 recommended; simple scale model"
+    },
+    {
+      "model_id": "v130_nf90_feed_pressure_scale_only",
+      "process_type": "nf",
+      "metric": "feed_pressure",
+      "model_type": "scale_only",
+      "regime": "nf_standard",
+      "runtime_enabled": true,
+      "validation_mode": "runtime_candidate",
+      "nonnegative_output": true,
+      "applicability": {
+        "membrane_family": "NF90",
+        "membrane_models": [
+          "NF90",
+          "NF90-400",
+          "NF90-400/34",
+          "FilmTec NF90",
+          "FilmTec NF90-400",
+          "FilmTec NF90-400/34"
+        ]
+      },
+      "model_payload": {
+        "description": "raw*k",
+        "feature_names": [],
+        "intercept": false,
+        "model_type": "scale_only",
+        "scale_factor": 1.5966815017950708
+      },
+      "performance": {
+        "selection_score": 2.681632,
+        "train_raw_mean_abs_error_pct": 36.912455,
+        "train_corrected_mean_abs_error_pct": 2.431632,
+        "train_improvement_pct": 93.412434,
+        "holdout_raw_mean_abs_error_pct": 36.358994,
+        "holdout_corrected_mean_abs_error_pct": 1.614417,
+        "holdout_improvement_pct": 95.559787,
+        "holdout_corrected_p90_abs_error_pct": 2.35167,
+        "train_n": 5,
+        "holdout_n": 2,
+        "negative_prediction_count": 0
+      },
+      "source": {
+        "candidate_file": "scripts/wave_records/results/_report_corpus/v129_nf90_v91_model_candidates.csv",
+        "v91_recommended": false,
+        "v91_promotion_status": "unselected",
+        "v91_promotion_flags": ""
+      },
+      "selection_reason": "Conservative override: simpler than affine and lower holdout error"
+    },
+    {
+      "model_id": "v130_nf90_specific_energy_scale_only",
+      "process_type": "nf",
+      "metric": "specific_energy",
+      "model_type": "scale_only",
+      "regime": "nf_standard",
+      "runtime_enabled": true,
+      "validation_mode": "runtime_candidate",
+      "nonnegative_output": true,
+      "applicability": {
+        "membrane_family": "NF90",
+        "membrane_models": [
+          "NF90",
+          "NF90-400",
+          "NF90-400/34",
+          "FilmTec NF90",
+          "FilmTec NF90-400",
+          "FilmTec NF90-400/34"
+        ]
+      },
+      "model_payload": {
+        "description": "raw*k",
+        "feature_names": [],
+        "intercept": false,
+        "model_type": "scale_only",
+        "scale_factor": 1.8276720097216597
+      },
+      "performance": {
+        "selection_score": 3.511444,
+        "train_raw_mean_abs_error_pct": 45.141993,
+        "train_corrected_mean_abs_error_pct": 3.261444,
+        "train_improvement_pct": 92.775145,
+        "holdout_raw_mean_abs_error_pct": 45.843478,
+        "holdout_corrected_mean_abs_error_pct": 1.019641,
+        "holdout_improvement_pct": 97.775821,
+        "holdout_corrected_p90_abs_error_pct": 1.37564,
+        "train_n": 5,
+        "holdout_n": 2,
+        "negative_prediction_count": 0
+      },
+      "source": {
+        "candidate_file": "scripts/wave_records/results/_report_corpus/v129_nf90_v91_model_candidates.csv",
+        "v91_recommended": false,
+        "v91_promotion_status": "unselected",
+        "v91_promotion_flags": ""
+      },
+      "selection_reason": "Conservative override: simpler than affine and lower holdout error"
+    },
+    {
+      "model_id": "v130_nf90_product_tds_affine_raw",
+      "process_type": "nf",
+      "metric": "product_tds",
+      "model_type": "affine_raw",
+      "regime": "nf_standard",
+      "runtime_enabled": false,
+      "validation_mode": "shadow_only",
+      "nonnegative_output": true,
+      "applicability": {
+        "membrane_family": "NF90",
+        "membrane_models": [
+          "NF90",
+          "NF90-400",
+          "NF90-400/34",
+          "FilmTec NF90",
+          "FilmTec NF90-400",
+          "FilmTec NF90-400/34"
+        ]
+      },
+      "model_payload": {
+        "coefficients": {
+          "aquanova_raw_value": 5.46202244536354,
+          "intercept": 19.137999999999998
+        },
+        "description": "intercept + raw",
+        "feature_names": [
+          "aquanova_raw_value"
+        ],
+        "feature_stats": {
+          "aquanova_raw_value": {
+            "mean": 434.5,
+            "std": 170.77267193552956
+          }
+        },
+        "intercept": true,
+        "model_type": "affine_raw"
+      },
+      "performance": {
+        "selection_score": 7.219558,
+        "train_raw_mean_abs_error_pct": 2103.478184,
+        "train_corrected_mean_abs_error_pct": 6.719558,
+        "train_improvement_pct": 99.68055,
+        "holdout_raw_mean_abs_error_pct": 2030.193362,
+        "holdout_corrected_mean_abs_error_pct": 14.945698,
+        "holdout_improvement_pct": 99.263829,
+        "holdout_corrected_p90_abs_error_pct": 16.714305,
+        "train_n": 5,
+        "holdout_n": 2,
+        "negative_prediction_count": 0
+      },
+      "source": {
+        "candidate_file": "scripts/wave_records/results/_report_corpus/v129_nf90_allrows_v91_model_candidates.csv",
+        "v91_recommended": true,
+        "v91_promotion_status": "review_required",
+        "v91_promotion_flags": "insufficient_anchor_count"
+      },
+      "selection_reason": "Severe-input fit; retained as shadow-only until more NF90 anchors exist"
+    }
+  ],
+  "runtime_enabled_by_default": false,
+  "schema_version": "aquanova.wave_correction_layer.v131",
+  "summary": {
+    "input_model_count": 15,
+    "promoted_by_process_metric": [
+      "ccro.feed_pressure",
+      "ccro.final_concentrate_tds",
+      "ccro.specific_energy",
+      "ro.feed_pressure",
+      "ro.specific_energy"
+    ],
+    "promoted_model_count": 5,
+    "rejected_model_count": 10,
+    "runtime_enabled_by_default": false,
+    "schema_version": "aquanova.wave_correction_layer.v92",
+    "thresholds": {
+      "max_holdout_corrected_mean_abs_error_pct": 25.0,
+      "max_train_corrected_mean_abs_error_pct": 25.0,
+      "min_holdout_improvement_pct": 20.0,
+      "min_holdout_n": 3,
+      "min_train_n": 8
+    },
+    "v131_nf_default_layer_merge": {
+      "status": "reviewed_runtime_artifact",
+      "existing_model_count": 5,
+      "nf_model_count": 6,
+      "nf_runtime_model_count": 5,
+      "nf_shadow_model_count": 1,
+      "merged_model_count": 11,
+      "global_default_enabled": false,
+      "nf90_product_tds_mode": "shadow_only",
+      "source_campaign": "V126-V130 NF membrane calibration"
+    }
+  },
+  "thresholds": {
+    "max_holdout_corrected_mean_abs_error_pct": 25.0,
+    "max_train_corrected_mean_abs_error_pct": 25.0,
+    "min_holdout_improvement_pct": 20.0,
+    "min_holdout_n": 3,
+    "min_train_n": 8
+  },
+  "artifact": {
+    "artifact_name": "AquaNova V131 reviewed WAVE correction layer",
+    "artifact_status": "approved_for_opt_in_runtime",
+    "installation_default": "disabled",
+    "contains_machine_paths": false
+  }
+}
