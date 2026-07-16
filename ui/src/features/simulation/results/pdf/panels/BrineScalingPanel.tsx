@@ -1,7 +1,5 @@
 // ui/src/features/simulation/results/pdf/panels/BrineScalingPanel.tsx
 import React from 'react';
-import { THEME } from '../theme';
-import { Badge } from '../components';
 
 export function BrineScalingPanel({ chemistry }: { chemistry: any }) {
   const brine = chemistry?.final_brine;
@@ -10,106 +8,128 @@ export function BrineScalingPanel({ chemistry }: { chemistry: any }) {
     return null;
   }
 
-  // 🛑 [WAVE PATCH] 상태 판별 로직 고도화 (WAVE 가이드라인 기준)
-  const checkLimit = (
+  // WAVE 스타일의 밀도 높은 테두리 디자인
+  const thClass =
+    'py-1.5 px-3 text-[11px] font-bold text-slate-800 border border-slate-400 bg-slate-200 text-left';
+  const tdLabelClass =
+    'py-1 px-3 text-[11px] font-semibold text-slate-700 border border-slate-300 bg-slate-50';
+  const tdValueClass =
+    'py-1 px-3 text-[11px] text-right tabular-nums border border-slate-300';
+  const tdStatusClass =
+    'py-1 px-3 text-[10px] text-center font-bold border border-slate-300 uppercase tracking-wide';
+
+  // 상태 판별 함수 (WAVE 스타일의 엄격한 기준 적용)
+  const evaluate = (
     val: number | undefined | null,
     warnLimit: number,
     errLimit: number,
   ) => {
-    if (val == null) return { status: 'N/A', color: 'text-slate-500' };
-    if (val >= errLimit)
-      return { status: 'ERROR', color: 'text-rose-600 font-black' };
-    if (val >= warnLimit)
-      return { status: 'WARN', color: 'text-amber-500 font-bold' };
-    return { status: 'OK', color: 'text-emerald-600 font-medium' };
+    if (val == null) return { status: '-', color: 'text-slate-500' };
+    if (val > errLimit)
+      return { status: '초과 (Exceeded)', color: 'text-red-700 bg-red-50' };
+    if (val > warnLimit)
+      return { status: '경고 (Warning)', color: 'text-amber-600 bg-amber-50' };
+    return { status: '정상 (OK)', color: 'text-emerald-700' };
   };
 
   const metrics = [
     {
-      label: 'Langelier Saturation Index (LSI)',
-      value: brine.lsi,
+      label: '랑겔리아 포화 지수 (LSI)',
+      val: brine.lsi,
+      limit: 1.8,
+      warn: 0.5,
       unit: '',
-      limitTxt: 'Max 1.8 (w/ AS)',
-      ...checkLimit(brine.lsi, 0.5, 1.8), // 0.5 이상 주의, 1.8 이상 에러
     },
     {
-      label: 'Stiff & Davis Index (SDSI)',
-      value: brine.s_dsi,
+      label: '스티프 & 데이비스 지수 (S&DSI)',
+      val: brine.s_dsi,
+      limit: 1.8,
+      warn: 0.5,
       unit: '',
-      limitTxt: 'Max 1.8 (w/ AS)',
-      ...checkLimit(brine.s_dsi, 0.5, 1.8),
     },
     {
-      label: 'CaSO4 Saturation',
-      value: brine.caso4_sat_pct,
+      label: '황산칼슘 포화도 (CaSO4)',
+      val: brine.caso4_sat_pct,
+      limit: 100,
+      warn: 80,
       unit: '%',
-      limitTxt: 'Max 100%',
-      ...checkLimit(brine.caso4_sat_pct, 80, 100), // 80% 이상 주의, 100% 초과 에러
     },
     {
-      label: 'BaSO4 Saturation',
-      value: brine.baso4_sat_pct,
+      label: '황산바륨 포화도 (BaSO4)',
+      val: brine.baso4_sat_pct,
+      limit: 100,
+      warn: 80,
       unit: '%',
-      limitTxt: 'Max 100%',
-      ...checkLimit(brine.baso4_sat_pct, 80, 100),
     },
     {
-      label: 'Silica (SiO2) Saturation',
-      value: brine.sio2_sat_pct,
+      label: '실리카 포화도 (SiO2)',
+      val: brine.sio2_sat_pct,
+      limit: 100,
+      warn: 80,
       unit: '%',
-      limitTxt: 'Max 100%',
-      ...checkLimit(brine.sio2_sat_pct, 80, 100),
     },
-  ].filter((m) => m.value != null);
+    // 백엔드 확장을 대비한 추가 항목들 (데이터가 들어오면 자동으로 표기됨)
+    {
+      label: '황산스트론튬 포화도 (SrSO4)',
+      val: brine.srso4_sat_pct,
+      limit: 100,
+      warn: 80,
+      unit: '%',
+    },
+    {
+      label: '불화칼슘 포화도 (CaF2)',
+      val: brine.caf2_sat_pct,
+      limit: 100,
+      warn: 80,
+      unit: '%',
+    },
+  ].filter((m) => m.val != null);
 
   if (metrics.length === 0) return null;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 mb-1">
-        <Badge text="SCALING" tone="violet" />
-        <div className="text-[10px] text-slate-500 font-medium">
-          Concentrate Stream Solubility Indicators (Antiscalant may be required)
-        </div>
+    <div className="w-full print:break-inside-avoid">
+      {/* 섹션 타이틀: 뱃지를 없애고 세련된 세로선(Border) 강조 적용 */}
+      <div className="text-[12px] font-bold text-slate-800 mb-2 pl-2 border-l-2 border-slate-800 uppercase tracking-wider">
+        용해도 및 스케일링 지표 (농축수 기준) - Solubility & Scaling
       </div>
 
-      <div className={THEME.TABLE_WRAP}>
-        <div className="overflow-x-auto">
-          <table className={THEME.TABLE}>
-            <thead>
-              <tr>
-                <th className={THEME.TH}>Parameter</th>
-                <th className={THEME.TH}>Value</th>
-                <th className={THEME.TH}>Limit (Guideline)</th>
-                <th className={THEME.TH}>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metrics.map((m, i) => {
-                const val =
-                  typeof m.value === 'number' ? m.value.toFixed(2) : m.value;
+      <table className="w-full border-collapse border-2 border-slate-500">
+        <thead>
+          <tr>
+            <th className={thClass}>평가 항목 (Parameter)</th>
+            <th className={`${thClass} text-right`}>결과값 (Value)</th>
+            <th className={`${thClass} text-right`}>제한 기준 (Limit)</th>
+            <th className={`${thClass} text-center`}>상태 (Status)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {metrics.map((m, i) => {
+            const { status, color } = evaluate(m.val, m.warn, m.limit);
+            const displayVal =
+              typeof m.val === 'number' ? m.val.toFixed(2) : '-';
+            const limitTxt = `최대 ${m.limit}${m.unit}`;
 
-                return (
-                  <tr key={i} className={THEME.TR}>
-                    <td className={`${THEME.TD_LABEL} font-semibold`}>
-                      {m.label}
-                    </td>
-                    <td className={`${THEME.TD} font-mono ${m.color}`}>
-                      {val}{' '}
-                      <span className="text-[9px] opacity-70">{m.unit}</span>
-                    </td>
-                    <td className={`${THEME.TD} text-[10px] text-slate-500`}>
-                      {m.limitTxt}
-                    </td>
-                    <td className={THEME.TD}>
-                      <span className={m.color}>{m.status}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+            return (
+              <tr key={i} className="hover:bg-slate-50/50">
+                <td className={tdLabelClass}>{m.label}</td>
+                <td className={`${tdValueClass} font-mono text-slate-900`}>
+                  {displayVal}
+                  {m.unit}
+                </td>
+                <td className={`${tdValueClass} text-slate-500`}>{limitTxt}</td>
+                <td className={`${tdStatusClass} ${color}`}>{status}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* 엔지니어링 리포트 특유의 하단 각주(Footnote) */}
+      <div className="mt-1 text-[9px] text-slate-500 italic">
+        * 경고(Warning): 값이 용해도 한계에 근접하고 있음을 나타냅니다. 한계를
+        초과(Exceeded)한 경우 스케일 방지제(Antiscalant) 투입 또는 설계 변경이
+        필요합니다.
       </div>
     </div>
   );

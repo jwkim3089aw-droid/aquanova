@@ -1,34 +1,50 @@
-// ui\src\main.tsx
 // ui/src/main.tsx
-import React from 'react';
+import React, { ErrorInfo, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
+import App from './App';
+import { logger } from './utils/logger';
 import './index.css';
 
-function log(s: string) {
+// 화면의 #diag 요소에 텍스트를 추가하는 진단용 헬퍼 함수
+function appendToDiag(s: string) {
   const d = document.getElementById('diag');
   if (d) d.textContent += '\n' + s;
-  else console.log(s);
+}
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  error: Error | null;
 }
 
 class HardErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { error: any }
+  ErrorBoundaryProps,
+  ErrorBoundaryState
 > {
-  constructor(props: any) {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { error: null };
   }
-  static getDerivedStateFromError(error: any) {
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { error };
   }
-  componentDidCatch(error: any, info: any) {
-    log(
-      '[HardErrorBoundary] ' +
-        (error?.stack || error?.message || String(error)),
-    );
-    if (info?.componentStack) log('[componentStack] ' + info.componentStack);
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    const errorMsg = error.stack || error.message || String(error);
+
+    // 화면 진단 패널에 출력
+    appendToDiag('[HardErrorBoundary] ' + errorMsg);
+    if (info.componentStack)
+      appendToDiag('[componentStack] ' + info.componentStack);
+
+    // 콘솔 (및 추후 백엔드) 로깅 처리
+    logger.error('[HardErrorBoundary] React Render Error', { error, info });
   }
+
   render() {
     if (this.state.error) {
       return (
@@ -43,11 +59,9 @@ class HardErrorBoundary extends React.Component<
         >
           <div style={{ fontWeight: 700, marginBottom: 8 }}>Render Error</div>
           <pre style={{ whiteSpace: 'pre-wrap' }}>
-            {String(
-              this.state.error?.stack ||
-                this.state.error?.message ||
-                this.state.error,
-            )}
+            {this.state.error.stack ||
+              this.state.error.message ||
+              String(this.state.error)}
           </pre>
         </div>
       );
@@ -55,8 +69,6 @@ class HardErrorBoundary extends React.Component<
     return this.props.children;
   }
 }
-
-import App from './App';
 
 try {
   const rootEl = document.getElementById('root');
@@ -74,8 +86,13 @@ try {
     </React.StrictMode>,
   );
 
-  log('[ok] main.tsx mounted <App/>');
+  appendToDiag('[ok] main.tsx mounted <App/>');
+  logger.info('main.tsx mounted <App/>');
 } catch (e: any) {
-  log('[fail] main.tsx render: ' + (e?.stack || e?.message || String(e)));
+  const errorMsg = e?.stack || e?.message || String(e);
+
+  appendToDiag('[fail] main.tsx render: ' + errorMsg);
+  logger.error('main.tsx render failed', e);
+
   throw e;
 }

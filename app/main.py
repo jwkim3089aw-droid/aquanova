@@ -10,7 +10,7 @@ from loguru import logger
 
 # Config & Logger
 from app.core.config import settings
-from app.core.logger import setup_logging
+from app.core.logging import logger, setup_logging
 
 # Routers (통합 라우터 하나만 Import)
 from app.api.v1.api import api_router

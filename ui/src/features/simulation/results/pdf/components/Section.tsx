@@ -14,7 +14,8 @@ export function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className={THEME.SECTION}>
+    // 🛑 [WAVE PATCH] 템플릿 렌더링 시 제목과 내용이 다른 페이지로 찢어지는 것을 방지
+    <div className={`${THEME.SECTION} print:break-inside-avoid`}>
       <div className={THEME.SECTION_HEAD}>
         <div className={THEME.SECTION_TITLE}>
           {icon}

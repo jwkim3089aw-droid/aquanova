@@ -4,7 +4,6 @@ import { WAVEWaterType } from '../../../api/types';
 
 export type WaterTypeOption = { value: WAVEWaterType; label: string };
 
-// 🛑 WAVE UI의 Water Type 콤보박스와 100% 매칭
 export const WATER_TYPE_OPTIONS: WaterTypeOption[] = [
   { value: 'RO/NF Well Water', label: 'Well Water (RO/NF)' },
   { value: 'RO/NF Surface Water', label: 'Surface Water (RO/NF)' },
@@ -34,11 +33,6 @@ export function isFeedWaterType(v: unknown): v is WAVEWaterType {
   );
 }
 
-/**
- * ✅ 백엔드 enum 정석화
- * - 과거 데이터(한글/별칭/대소문자/카테고리 문자열)를 WAVEWaterType으로 정규화
- * - WAVE 카테고리에 맞게 똑똑하게 파싱
- */
 export function normalizeWaterType(v: unknown): WAVEWaterType | null {
   if (v == null) return null;
 
@@ -88,8 +82,10 @@ export function normalizeWaterType(v: unknown): WAVEWaterType | null {
 // ----------------------
 // Preset helpers
 // ----------------------
-
-export type IonMap = Record<string, number | null | undefined>;
+// 🚀 [붕소 패치] b 이온 속성 보장
+export type IonMap = Record<string, number | null | undefined> & {
+  b?: number | null;
+};
 
 export type WaterCatalogPreset = {
   id: string;

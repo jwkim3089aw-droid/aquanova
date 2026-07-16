@@ -1,0 +1,1 @@
+"""WAVE UI automation prototypes."""

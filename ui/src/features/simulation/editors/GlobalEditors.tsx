@@ -1,8 +1,13 @@
-// ui\src\features\simulation\editors\GlobalEditors.tsx
+// ui/src/features/simulation/editors/GlobalEditors.tsx
 import React, { useState, useEffect } from 'react';
-import { Info, ArrowLeftRight, ChevronUp, ChevronDown } from 'lucide-react';
+import {
+  Info,
+  ArrowLeftRight,
+  ChevronUp,
+  ChevronDown,
+  Beaker,
+} from 'lucide-react';
 
-// ✅ [경로 수정 완료] components 폴더가 editors와 같은 레벨에 있음
 import { Field, Input } from '../components/Common';
 import {
   ChemistryInput,
@@ -25,13 +30,16 @@ import {
 export function FeedChemistryCard({
   value,
   onChange,
+  onDosingChange,
+  dosingValue,
 }: {
   value: ChemistryInput;
   onChange: (patch: Partial<ChemistryInput>) => void;
+  onDosingChange?: (targetPh: number | null) => void;
+  dosingValue?: number | null;
 }) {
   const v = value;
   return (
-    // [Safety] 키보드 이벤트 전파 차단
     <div
       className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 mt-2"
       onKeyDown={(e) => e.stopPropagation()}
@@ -46,7 +54,7 @@ export function FeedChemistryCard({
           <span>Used for scaling calc</span>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-x-2 gap-y-3 text-xs">
+      <div className="grid grid-cols-2 gap-x-2 gap-y-3 text-xs mb-4">
         <Field label="Alkalinity (as CaCO₃)">
           <Input
             className="h-7 text-right bg-slate-900 border-slate-700 focus:border-blue-500"
@@ -120,6 +128,39 @@ export function FeedChemistryCard({
           />
         </Field>
       </div>
+
+      {/* 🚀 [붕소 패치] 2-Pass 시스템용 pH (NaOH) 도징 컨트롤 */}
+      {onDosingChange && (
+        <div className="pt-3 mt-1 border-t border-slate-800/70">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[11px] font-bold text-blue-400 flex items-center gap-1">
+              <Beaker className="w-3.5 h-3.5" />
+              Inter-stage pH Control (NaOH)
+            </div>
+            <div className="text-[9px] text-slate-500 uppercase">
+              For Boron Rejection
+            </div>
+          </div>
+          <div className="grid grid-cols-1">
+            <Field label="Pass 2 Target pH">
+              <div className="flex items-center gap-2">
+                <Input
+                  className="h-8 flex-1 text-right bg-blue-950/30 border-blue-900/50 focus:border-blue-500 font-mono text-blue-300"
+                  value={dosingValue ?? ''}
+                  placeholder="e.g. 10.0"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    onDosingChange(val === '' ? null : Number(val));
+                  }}
+                />
+                <span className="text-[10px] text-slate-500 whitespace-nowrap">
+                  (Default: None)
+                </span>
+              </div>
+            </Field>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -162,7 +203,6 @@ export function StageList({
   }, [unitMode, bulkMode]);
 
   return (
-    // [Safety] 키보드 이벤트 차단
     <div
       className="rounded-xl border border-slate-800 bg-slate-950/50 p-4 shadow-sm"
       onKeyDown={(e) => e.stopPropagation()}

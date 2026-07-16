@@ -1,8 +1,8 @@
 # app/services/membranes.py
 from __future__ import annotations
 from typing import Any, Optional, Dict, Tuple
-from app.api.v1.schemas import MembraneSpec
-from app.api.v1.schemas import MembraneOut
+from app.schemas.membrane import MembraneSpec
+from app.schemas.membrane import MembraneOut
 from app.data.membranes import MEMBRANES
 
 

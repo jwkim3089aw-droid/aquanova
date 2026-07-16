@@ -1,41 +1,34 @@
-// ui\src\features\simulation\components\GlobalOptionsModal.tsx
+// ui/src/features/simulation/components/GlobalOptionsModal.tsx
 import React from 'react';
-
 import { Field, Input } from '..';
-import MembraneSelect from './MembraneSelect';
 import { useBlockDeleteKeysWhenOpen } from '../hooks/useBlockDeleteKeysWhenOpen';
+import { OpexState } from '../model/types';
 
 interface GlobalOptionsProps {
   isOpen: boolean;
   onClose: () => void;
-  optAuto: boolean;
-  setOptAuto: (v: boolean) => void;
-  optMembrane: any;
-  setOptMembrane: (v: any) => void;
   optSegments: number;
   setOptSegments: (v: number) => void;
   optPumpEff: number;
   setOptPumpEff: (v: number) => void;
   optErdEff: number;
   setOptErdEff: (v: number) => void;
-  stageTypeHint: 'RO' | 'NF' | 'UF' | 'MF' | 'HRRO' | undefined;
+  opexConfig: OpexState;
+  setOpexConfig: (v: OpexState) => void;
 }
 
 export function GlobalOptionsModal(props: GlobalOptionsProps) {
   const {
     isOpen,
     onClose,
-    optAuto,
-    setOptAuto,
-    optMembrane,
-    setOptMembrane,
     optSegments,
     setOptSegments,
     optPumpEff,
     setOptPumpEff,
     optErdEff,
     setOptErdEff,
-    stageTypeHint,
+    opexConfig,
+    setOpexConfig,
   } = props;
 
   useBlockDeleteKeysWhenOpen(isOpen);
@@ -53,7 +46,7 @@ export function GlobalOptionsModal(props: GlobalOptionsProps) {
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/50">
           <h2 className="text-sm font-bold text-slate-100 uppercase tracking-wide">
-            Global Project Options
+            글로벌 프로젝트 옵션
           </h2>
           <button
             onClick={onClose}
@@ -63,69 +56,87 @@ export function GlobalOptionsModal(props: GlobalOptionsProps) {
           </button>
         </div>
 
-        <div className="p-5 space-y-5">
-          <div className="flex items-center gap-3 p-3 bg-blue-900/10 border border-blue-900/30 rounded-lg">
-            <label className="flex items-center gap-3 w-full cursor-pointer">
-              <input
-                type="checkbox"
-                className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-offset-0 focus:ring-0"
-                checked={optAuto}
-                onChange={(e) => setOptAuto(e.target.checked)}
-              />
-              <div className="flex flex-col">
-                <span className="text-sm font-bold text-blue-100">
-                  Auto-Configuration Mode
-                </span>
-                <span className="text-[10px] text-blue-300/70">
-                  Automatically calculate element quantity based on flow
-                </span>
-              </div>
-            </label>
-          </div>
-
+        <div className="p-5 space-y-6 max-h-[75vh] overflow-y-auto">
+          {/* 시스템 공통 설정 */}
           <div className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">
-                Default Membrane Model
-              </label>
-              <MembraneSelect
-                unitType={stageTypeHint || 'RO'}
-                mode="catalog"
-                model={
-                  typeof optMembrane === 'string'
-                    ? optMembrane
-                    : optMembrane?.membrane_model
-                }
-                onChange={(v) => setOptMembrane(v)}
-              />
-            </div>
-
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              시스템 기본 변수
+            </h3>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Elements per Vessel">
+              <Field label="베셀 당 엘리먼트 수">
                 <Input
-                  disabled={optAuto}
                   className="text-center"
                   value={optSegments}
                   onChange={(e) => setOptSegments(Number(e.target.value))}
                 />
               </Field>
               <div className="col-span-1" />
-              <Field label="Pump Efficiency (0-1)">
+              <Field label="펌프 효율 (0~1)">
                 <Input
-                  disabled={optAuto}
                   className="text-center"
                   value={optPumpEff}
                   step={0.01}
                   onChange={(e) => setOptPumpEff(Number(e.target.value))}
                 />
               </Field>
-              <Field label="ERD Efficiency (0-1)">
+              <Field label="ERD 효율 (0~1)">
                 <Input
-                  disabled={optAuto}
                   className="text-center"
                   value={optErdEff}
                   step={0.01}
                   onChange={(e) => setOptErdEff(Number(e.target.value))}
+                />
+              </Field>
+            </div>
+          </div>
+
+          {/* OPEX 단가 설정 */}
+          <div className="space-y-4 pt-4 border-t border-slate-800">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+              <span className="text-emerald-400">💰</span> 운영비(OPEX) 단가
+              설정
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="전력 단가 ($/kWh)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  className="text-right tabular-nums"
+                  value={opexConfig.electricity_price_kwh}
+                  onChange={(e) =>
+                    setOpexConfig({
+                      ...opexConfig,
+                      electricity_price_kwh: Number(e.target.value),
+                    })
+                  }
+                />
+              </Field>
+              <Field label="스케일 방지제 단가 ($/kg)">
+                <Input
+                  type="number"
+                  step="0.1"
+                  className="text-right tabular-nums"
+                  value={opexConfig.antiscalant_price_kg}
+                  onChange={(e) =>
+                    setOpexConfig({
+                      ...opexConfig,
+                      antiscalant_price_kg: Number(e.target.value),
+                    })
+                  }
+                />
+              </Field>
+              <Field label="산/염기 단가 ($/kg)">
+                <Input
+                  type="number"
+                  step="0.1"
+                  className="text-right tabular-nums"
+                  value={opexConfig.acid_base_price_kg}
+                  onChange={(e) =>
+                    setOpexConfig({
+                      ...opexConfig,
+                      acid_base_price_kg: Number(e.target.value),
+                    })
+                  }
                 />
               </Field>
             </div>
@@ -137,7 +148,7 @@ export function GlobalOptionsModal(props: GlobalOptionsProps) {
             onClick={onClose}
             className="px-5 py-1.5 bg-slate-100 hover:bg-white text-slate-900 rounded-md text-xs font-bold transition-colors shadow-lg"
           >
-            Save & Close
+            저장 및 닫기
           </button>
         </div>
       </div>

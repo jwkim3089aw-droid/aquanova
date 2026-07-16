@@ -1,16 +1,19 @@
 // ui/src/features/simulation/model/types.ts
-// AquaNova FlowBuilder — Types & Utilities
 
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
 import type { Node, Edge } from 'reactflow';
 import type { TimeSeriesPoint } from '@/api/types';
 import type { ChargeBalanceMode } from '../chemistry';
 
-// ==========================================================
-// 1) Core Unit Types
-// ==========================================================
-
 export type UnitKind = 'RO' | 'NF' | 'UF' | 'MF' | 'HRRO' | 'PUMP';
+
+export type WaterType =
+  | 'RO/NF Well Water'
+  | 'RO/NF Surface Water'
+  | 'SD Seawater (Open Intake)'
+  | 'SD Seawater (Well)'
+  | 'WW Wastewater'
+  | 'City Water';
 
 export type BaseMembraneConfig = {
   membrane_mode?: 'catalog' | 'custom';
@@ -19,140 +22,187 @@ export type BaseMembraneConfig = {
   custom_A_lmh_bar?: number;
   custom_B_lmh?: number;
   custom_salt_rejection_pct?: number;
-
   enable_pump?: boolean;
   pump_pressure_bar?: number;
-  pump_efficiency_pct?: number;
+  pump_eff?: number;
 };
 
-// 🛑 [MULTI-STAGE PATCH] Stage-specific configuration for RO/NF arrays
 export type MembraneStageConfig = {
-  stage_idx: number; // 1, 2, 3...
-  vessel_count: number; // 병렬 베셀 수 (WAVE의 Nx)
-  elements_per_vessel: number; // 베셀 당 막 개수 (보통 6~8)
-  elements: number; // vessel_count * elements_per_vessel
-
-  flow_factor: number; // Fouling 계수 (통상 0.85)
-  spi: number; // Salt Passage Increase (염 투과 증가율)
-
-  pre_stage_dp_bar: number; // 전단 배관/필터 마찰 손실 (bar)
-  isbp_pressure_bar: number; // 단간 부스터 펌프(ISBP) 승압 (bar) - Stage 2부터 주로 사용
-  isbp_eff_pct: number; // ISBP 펌프 효율 (%)
-
+  stage_idx: number;
+  vessel_count: number;
+  elements_per_vessel: number;
+  elements: number;
+  flow_factor: number;
+  spi: number;
+  pre_stage_dp_bar: number;
+  isbp_pressure_bar: number;
+  isbp_eff_pct: number;
   [k: string]: any;
 };
 
-// 🛑 [WAVE PATCH] ROConfig 고도화: Array, Ageing, Hydraulics
 export type ROConfig = BaseMembraneConfig & {
-  // 1. Array Configuration (다단 구조)
-  num_stages: number; // 총 스테이지 수 (UI 탭 개수 결정, 1~3)
-  stages: MembraneStageConfig[]; // 다단 배열 데이터
-
-  // 2. Control Mode & Targets (전체 시스템 기준)
+  num_stages: number;
+  stages: MembraneStageConfig[];
   mode: 'pressure' | 'recovery' | 'flow';
   pressure_bar?: number;
   recovery_target_pct?: number;
   flow_target_m3h?: number;
-
-  // 3. Hydraulics & Fouling (시스템 공통 설정)
   permeate_back_pressure_bar?: number;
+  max_tmp_bar?: number;
   age_years?: number;
-
-  // --- 하위 호환성 (Migration용: 옛날 단일 Stage 포맷 유지) ---
   elements?: number;
   vessel_count?: number;
   elements_per_vessel?: number;
   flow_factor?: number;
   spi?: number;
   pre_stage_dp_bar?: number;
-
   [k: string]: any;
 };
 
 export type NFConfig = BaseMembraneConfig & {
   num_stages: number;
   stages: MembraneStageConfig[];
-
   mode: 'pressure' | 'recovery' | 'flow';
   pressure_bar?: number;
   recovery_target_pct?: number;
   flow_target_m3h?: number;
-
   permeate_back_pressure_bar?: number;
+  max_tmp_bar?: number;
   age_years?: number;
-
   elements?: number;
   vessel_count?: number;
   elements_per_vessel?: number;
   flow_factor?: number;
   spi?: number;
   pre_stage_dp_bar?: number;
-
   [k: string]: any;
+};
+
+export type UFMaintenanceConfig = {
+  filtration_duration_min?: number;
+  acid_ceb_interval_h?: number;
+  alkali_ceb_interval_h?: number;
+  cip_interval_d?: number;
+  mini_cip_interval_d?: number;
+
+  backwash_duration_sec?: number;
+  drain_duration_sec?: number;
+  top_backwash_duration_sec?: number;
+  bottom_backwash_duration_sec?: number;
+  air_scour_duration_sec?: number;
+  forward_flush_duration_sec?: number;
+
+  backwash_flux_lmh?: number;
+  ceb_flux_lmh?: number;
+  forward_flush_flow_m3h_per_mod?: number;
+  air_flow_nm3h_per_mod?: number;
+
+  ceb_soaking_min?: number;
+  cip_heating_min?: number;
+
+  power_plc_kw?: number;
+  power_valve_kw?: number;
+  valves_per_train?: number;
+  valve_action_sec?: number;
+
+  air_scour_pressure_bar?: number;
+  filtrate_pressure_bar?: number;
+  filtration_piping_dp_bar?: number;
+  strainer_dp_bar?: number;
+  backwash_piping_dp_bar?: number;
+  cip_piping_dp_bar?: number;
+
+  integrity_test_min_day?: number;
 };
 
 export type UFConfig = BaseMembraneConfig & {
   elements: number;
-  filtrate_flux_lmh_25C?: number;
-  backwash_flux_lmh?: number;
-  filtration_duration_min?: number;
-  uf_backwash_duration_s?: number;
+  design_flux_lmh?: number;
+  recovery_target_pct?: number;
+  max_tmp_bar?: number;
+  uf_permeability_25c_lmh_bar?: number;
+  uf_p_out_bar?: number;
+  uf_header_loss_bar?: number;
+  uf_maintenance?: UFMaintenanceConfig;
   [k: string]: any;
 };
 
 export type MFConfig = BaseMembraneConfig & {
   elements: number;
-  mode: 'pressure' | 'recovery';
-  pressure_bar?: number;
+  flux_lmh?: number;
   recovery_target_pct?: number;
-  mf_filtration_duration_min?: number;
-  mf_backwash_duration_s?: number;
-  mf_filtrate_flux_lmh_25C?: number;
-  mf_backwash_flux_lmh?: number;
+  max_tmp_bar?: number;
+  filtration_cycle_min?: number;
+  backwash_duration_sec?: number;
+  backwash_flux_lmh?: number;
+  mf_cip_loss_factor?: number;
+  mf_permeability_25c_lmh_bar?: number;
+  mf_p_out_bar?: number;
+  mf_header_loss_bar?: number;
   [k: string]: any;
 };
 
+export type HRROSpacerIn = {
+  thickness_mm?: number;
+  voidage?: number;
+  hydraulic_diameter_m?: number;
+};
+
+export type HRROMassTransferIn = {
+  feed_channel_area_m2?: number;
+  diffusivity_m2_s?: number;
+};
+
+export type HRROPFMode =
+  | 'wave_true_plug_flow'
+  | 'smart_partial_drain'
+  | 'field_optimized_low_fr';
+
 export type HRROConfig = BaseMembraneConfig & {
   elements: number;
-  p_set_bar: number;
-  recirc_flow_m3h: number;
-  bleed_m3h: number;
-  loop_volume_m3: number;
-  timestep_s: number;
-  max_minutes: number;
-
-  stop_permeate_tds_mgL: number | null;
-  stop_recovery_pct: number | null;
-
-  element_inch?: number;
   vessel_count?: number;
   elements_per_vessel?: number;
-
-  feed_flow_m3h?: number;
   ccro_recovery_pct?: number;
+  recirc_flow_m3h?: number;
+  cc_recycle_m3h_per_pv?: number;
+  loop_volume_m3?: number;
+  timestep_s?: number;
+  max_minutes?: number;
+  max_tmp_bar?: number;
+  hrro_B_sal_slope?: number;
+  hrro_A_compaction_k?: number;
+  permeate_back_pressure_bar?: number;
+
+  // V83: UI-facing controls for V82 smart partial-drain PF/adaptive cycle model
+  pf_mode?: HRROPFMode;
+  brine_valve_mode?: 'full_open' | 'partial_pid' | string;
   pf_feed_ratio_pct?: number;
   pf_recovery_pct?: number;
-  cc_recycle_m3h_per_pv?: number;
-  membrane_area_m2_per_element?: number;
+  p3_recycle_capacity_m3h_per_pv?: number;
+  pf_cp_assist_enabled?: boolean;
+  pf_cp_assist_flow_m3h_per_pv?: number;
+  adaptive_recovery_enabled?: boolean;
+  brine_conductivity_limit_mgL?: number;
+  brine_tds_limit_mgL?: number;
+  hpp_safe_pressure_limit_bar?: number;
+  hpp_sizing_mode?: 'base' | 'step1' | 'step2';
+  hpp_count?: number;
+  p3_generated_head_bar?: number;
+  p3_casing_pressure_rating_bar?: number;
 
-  pump_eff?: number;
-  mass_transfer?: Record<string, any>;
-  spacer?: Record<string, any>;
+  spacer?: HRROSpacerIn;
+  mass_transfer?: HRROMassTransferIn;
   [k: string]: any;
 };
 
 export type PumpConfig = {
   mode: 'fixed_pressure' | 'boost_pressure';
   pressure_bar: number;
-  pump_efficiency_pct: number;
+  pump_eff?: number;
 };
 
 export type OLConfig = ROConfig | NFConfig | UFConfig | MFConfig;
 export type AnyUnitConfig = OLConfig | HRROConfig;
-
-// ==========================================================
-// 2) Flow Nodes
-// ==========================================================
 
 export type Chip = {
   label: string;
@@ -174,28 +224,19 @@ export type FlowData =
   | UnitData;
 
 export type EndpointData = Extract<FlowData, { type: 'endpoint' }>;
-
 export type Snapshot = { nodes: Node<FlowData>[]; edges: Edge[] };
-
 export type UnitMode = 'SI' | 'US';
-
 export type UnitNode = Node<FlowData> & { data: UnitData };
 export type UnitNodeRF = UnitNode;
-
 export type ChainOk = { ok: true; chain: UnitNodeRF[] };
 export type ChainErr = { ok: false; message: string };
 
 export type SetNodesFn = Dispatch<SetStateAction<Node<FlowData>[]>>;
 export type SetEdgesFn = Dispatch<SetStateAction<Edge[]>>;
 
-// ==========================================================
-// 3) Chemistry UI Model (Strict WAVE Ordering)
-// ==========================================================
-
 export type ChemistryInput = {
   alkalinity_mgL_as_CaCO3: number | null;
   calcium_hardness_mgL_as_CaCO3: number | null;
-
   nh4_mgL?: number | null;
   k_mgL?: number | null;
   na_mgL?: number | null;
@@ -205,7 +246,6 @@ export type ChemistryInput = {
   ba_mgL?: number | null;
   fe_mgL?: number | null;
   mn_mgL?: number | null;
-
   co3_mgL?: number | null;
   hco3_mgL?: number | null;
   no3_mgL?: number | null;
@@ -214,16 +254,13 @@ export type ChemistryInput = {
   so4_mgL?: number | null;
   br_mgL?: number | null;
   po4_mgL?: number | null;
-
   sio2_mgL?: number | null;
   b_mgL?: number | null;
   co2_mgL?: number | null;
-
   sulfate_mgL?: number | null;
   barium_mgL?: number | null;
   strontium_mgL?: number | null;
   silica_mgL_SiO2?: number | null;
-
   [k: string]: unknown;
 };
 
@@ -244,33 +281,33 @@ export type ChemistrySummary = {
   final_brine?: ChemistrySI | null;
 };
 
-// ==========================================================
-// 4) Persistence Model (Strict WAVE Feed Setup)
-// ==========================================================
-
 export type FeedState = {
   flow_m3h: number;
   tds_mgL: number;
   ph: number;
   pressure_bar?: number;
-
   temperature_C: number;
   temp_min_C: number | null;
   temp_max_C: number | null;
-
-  water_type?: string | null;
+  water_type?: WaterType | null;
   water_subtype?: string | null;
-
-  turbidity_ntu: number | null;
-  tss_mgL: number | null;
-  sdi15: number | null;
-
-  toc_mgL: number | null;
-
+  fouling: {
+    turbidity_ntu: number | null;
+    tss_mgL: number | null;
+    sdi15: number | null;
+    toc_mgL: number | null;
+    cod_mgL: number | null;
+    bod_mgL: number | null;
+  };
   feed_note?: string | null;
   charge_balance_mode?: ChargeBalanceMode | null;
-
   [k: string]: unknown;
+};
+
+export type OpexState = {
+  electricity_price_kwh: number;
+  antiscalant_price_kg: number;
+  acid_base_price_kg: number;
 };
 
 export type PersistModel = {
@@ -286,11 +323,8 @@ export type PersistModel = {
   };
   name?: string;
   chemistry?: ChemistryInput;
+  opex?: OpexState;
 };
-
-// ==========================================================
-// 5) Units & Utilities
-// ==========================================================
 
 export const GPM_PER_M3H = 4.402867;
 export const PSI_PER_BAR = 14.5037738;
@@ -376,10 +410,6 @@ export function clampInt(v: any, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
   return Math.max(lo, Math.min(hi, n));
 }
-
-// ==========================================================
-// 6) Legacy HRRO-only result type (kept for compatibility)
-// ==========================================================
 
 export type HRRORunOutput = {
   minutes: number;

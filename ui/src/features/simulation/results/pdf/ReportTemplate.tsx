@@ -1,53 +1,23 @@
 // ui/src/features/simulation/results/pdf/ReportTemplate.tsx
 import React from 'react';
-import {
-  Activity,
-  Droplets,
-  Zap,
-  Gauge,
-  FlaskConical,
-  ShieldAlert,
-  Clock,
-  Database,
-  FileText,
-  GitBranch,
-  AlertTriangle,
-  BarChart3,
-  ListChecks,
-  Layers,
-  Waves,
-} from 'lucide-react';
-
 import { ReportProps } from './types';
-import { THEME } from './theme';
-import { safeArr, safeObj } from './utils';
+import { safeArr, safeObj, fmt, pct } from './utils';
 
-import {
-  Page,
-  Section,
-  Badge,
-  KPI,
-  KVGrid,
-  JsonDetails,
-  StreamTable,
-  StageSummaryTable,
-  ViolationsTable,
-  ViolationsSummary,
-} from './components';
-
+import { Page, Section, StreamTable, StageSummaryTable } from './components';
 import {
   TrainOverviewPanel,
   BalancePanel,
   SystemBalanceChart,
   StageWaterQualityPanel,
-  DistributionSummaryPanel,
   SystemWarningsPanel,
-  ElementProfilePanel,
   HRROCoreStatusTable,
   HRROHistoryChart,
   HistoryStatsTable,
-  TimeHistoryTable,
-  BrineScalingPanel, // ✅ 새로 추가된 패널 Import
+  BrineScalingPanel,
+  UfDetailsPanel,
+  ElementProfilePanel,
+  ChemicalDosingPanel,
+  OpexSummaryPanel, // 🟢 [NEW] 새로 만든 경제성 패널 임포트!
 } from './panels';
 
 type UnitBag = {
@@ -58,15 +28,15 @@ type UnitBag = {
 };
 
 const upper = (v: any) => String(v ?? '').toUpperCase();
-const notNil = (v: any) => v !== null && v !== undefined;
 
 export const ReportTemplate = React.forwardRef<HTMLDivElement, ReportProps>(
-  ({ data, mode, elementProfile }, ref) => {
+  ({ data }, ref) => {
     const safeData = data || {};
     const kpi = safeObj(safeData.kpi);
     const stages = safeArr(safeData.stage_metrics);
-
     const unitLabels = safeObj(safeData.unit_labels);
+    const economics = safeObj(safeData.economics);
+
     const u: UnitBag = {
       flow: unitLabels.flow ?? 'm³/h',
       pressure: unitLabels.pressure ?? 'bar',
@@ -82,602 +52,388 @@ export const ReportTemplate = React.forwardRef<HTMLDivElement, ReportProps>(
 
     const feed = streamByLabel('Feed');
     const perm = streamByLabel('Product') || streamByLabel('Permeate');
-    const brine = streamByLabel('Brine') || streamByLabel('Concentrate');
+    const brine = streamByLabel('Brine') || streamByLabel('Concentrate') || {};
 
+    const firstStage = stages[0] || {};
     const system = {
       recovery_pct: kpi.recovery_pct ?? 0,
       sec_kwhm3: kpi.sec_kwhm3 ?? kpi.sec_kwh_m3 ?? 0,
-      flux_lmh: kpi.flux_lmh ?? kpi.jw_avg_lmh ?? 0,
-      ndp_bar: kpi.ndp_bar ?? 0,
-      prod_tds: kpi.prod_tds ?? null,
-      feed_m3h: kpi.feed_m3h ?? null,
-      permeate_m3h: kpi.permeate_m3h ?? null,
+      flux_lmh: kpi.flux_lmh || kpi.jw_avg_lmh || firstStage.flux_lmh || 0,
+      ndp_bar: kpi.ndp_bar || firstStage.ndp_bar || firstStage.tmp_bar || 0,
     };
 
-    const stageData = stages.map((s: any, idx: number) => {
-      const flux = s?.flux_lmh ?? s?.jw_avg_lmh ?? null;
-      return {
-        stage: s?.stage ?? idx + 1,
-        flux,
-        ndp: s?.ndp_bar ?? null,
-        type: s?.module_type ?? 'RO',
-      };
-    });
+    const isMfUf = stages.some((s: any) =>
+      ['MF', 'UF'].includes(upper(s?.module_type || s?.type)),
+    );
+    const pressureLabel = isMfUf ? '막간차압 (TMP)' : '순구동압력 (NDP)';
 
-    const title = safeData.customTitle || 'AquaNova Report';
+    const feedTemp = feed?.temperature_C ?? 25.0;
+    const waterType = safeData?.feed?.water_type ?? 'Well Water';
+
+    const totalElements = stages.reduce((sum: number, s: any) => {
+      const elems =
+        s.elements ||
+        s.num_elements ||
+        s.total_elements ||
+        (s.vessel_count && s.elements_per_vessel
+          ? s.vessel_count * s.elements_per_vessel
+          : 0) ||
+        0;
+      return sum + Number(elems);
+    }, 0);
+
+    const totalPasses = stages.length;
+    const title =
+      safeData.customTitle || '시스템 예측 리포트 (System Projection Report)';
     const scenarioId = safeData.scenario_id || safeData.id || 'N/A';
     const createdAt = safeData.createdAtISO || safeData.created_at || null;
     const dateText = createdAt
       ? new Date(createdAt).toLocaleString()
       : new Date().toLocaleString();
-    const schemaVersion = safeData.schema_version ?? null;
 
-    // --- stage type counts (for cover note) ---
-    const countByType = stages.reduce<Record<string, number>>((acc, s) => {
-      const t = upper(s?.module_type || 'UNKNOWN');
-      acc[t] = (acc[t] ?? 0) + 1;
-      return acc;
-    }, {});
-    const ufCount = countByType['UF'] ?? 0;
-    const hrroCount = countByType['HRRO'] ?? 0;
+    const thClass =
+      'py-1.5 px-2 text-[10px] font-bold text-slate-800 border border-slate-300 bg-slate-100 text-left w-1/4';
+    const tdClass =
+      'py-1.5 px-2 text-[10px] text-slate-900 border border-slate-300 bg-white w-1/4 tabular-nums';
 
     // =========================
-    // Page 1 (Cover)
+    // Page 1: System Overview (유량, 밸런스 등)
     // =========================
     const page1 = (
       <Page key="page-1">
-        <div className="flex items-end justify-between mb-6">
-          <div>
-            <div className={THEME.H2}>DETAILED REPORT</div>
-            <h1 className={THEME.H1}>{title}</h1>
-          </div>
-
-          <div className="text-right text-[10px] text-slate-500 font-mono">
-            Scenario: {scenarioId}
-            <br />
-            Date: {dateText}
-            {schemaVersion != null ? (
-              <>
-                <br />
-                Schema: {schemaVersion}
-              </>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-3 mb-6">
-          <KPI
-            labelKo="회수율"
-            valueText={`${system.recovery_pct}%`}
-            hint="Recovery (%)"
-            icon={<Droplets className="w-6 h-6" />}
-            tone="blue"
-          />
-          <KPI
-            labelKo="비에너지"
-            valueText={`${system.sec_kwhm3} kWh/m³`}
-            hint="Specific Energy"
-            icon={<Zap className="w-6 h-6" />}
-            tone="amber"
-          />
-          <KPI
-            labelKo="평균 플럭스"
-            valueText={`${system.flux_lmh} ${u.flux}`}
-            hint="Flux"
-            icon={<Activity className="w-6 h-6" />}
-            tone="emerald"
-          />
-          <KPI
-            labelKo="NDP"
-            valueText={`${system.ndp_bar} ${u.pressure}`}
-            hint="Net Driving Pressure"
-            icon={<Gauge className="w-6 h-6" />}
-            tone="slate"
-          />
-        </div>
-
-        <Section
-          title="Train Overview"
-          icon={<GitBranch className="w-4 h-4 opacity-70" />}
-          right={
-            <Badge
-              text={`${stages.length} stages`}
-              tone={stages.length ? 'blue' : 'slate'}
+        <div className="mb-5 border-b-2 border-slate-800 pb-4">
+          <div className="flex justify-between items-start mb-3">
+            <img
+              src="/brand/logo.png"
+              alt="Brand Logo"
+              className="h-10 object-contain drop-shadow-sm"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
             />
-          }
-        >
+            <div className="text-right text-[10px] text-slate-500 font-mono mt-1">
+              <div>시나리오 ID: {scenarioId}</div>
+              <div>작성 일자: {dateText}</div>
+            </div>
+          </div>
+          <div className="mt-2">
+            <div className="text-[11px] font-bold text-slate-500 tracking-widest uppercase mb-1">
+              Project Information
+            </div>
+            <h1 className="text-2xl font-black text-slate-900 uppercase tracking-tight leading-none">
+              {title}
+            </h1>
+          </div>
+        </div>
+
+        <div className="mb-5 print:break-inside-avoid">
+          <div className="text-[11px] font-bold text-slate-800 mb-1.5 pl-2 border-l-2 border-slate-800 uppercase tracking-wider">
+            설계 기준 및 시스템 성능 (Design Basis & System Performance)
+          </div>
+          <table className="w-full border-collapse border-2 border-slate-400 shadow-sm">
+            <tbody>
+              <tr>
+                <td className={thClass}>원수 종류 (Water Type)</td>
+                <td className={tdClass}>{waterType}</td>
+                <td className={thClass}>총 엘리먼트 수 (Total Elements)</td>
+                <td className={tdClass}>
+                  {totalElements > 0 ? totalElements : '-'}
+                </td>
+              </tr>
+              <tr>
+                <td className={thClass}>유입수 온도 (Feed Temp)</td>
+                <td className={tdClass}>{fmt(feedTemp)} °C</td>
+                <td className={thClass}>총 스테이지 수 (Total Stages)</td>
+                <td className={tdClass}>{totalPasses}</td>
+              </tr>
+              <tr>
+                <td className={thClass}>유입 유량 (Feed Flow)</td>
+                <td className={tdClass}>
+                  {fmt(feed?.flow_m3h)} {u.flow}
+                </td>
+                <td className={thClass}>시스템 총 회수율 (System Recovery)</td>
+                <td
+                  className={`${tdClass} font-bold text-blue-800 bg-blue-50/50`}
+                >
+                  {pct(system.recovery_pct)}
+                </td>
+              </tr>
+              <tr>
+                <td className={thClass}>생산 유량 (Permeate Flow)</td>
+                <td
+                  className={`${tdClass} font-bold text-blue-800 bg-blue-50/50`}
+                >
+                  {fmt(perm?.flow_m3h)} {u.flow}
+                </td>
+                <td className={thClass}>평균 플럭스 (Average Flux)</td>
+                <td className={tdClass}>
+                  {fmt(system.flux_lmh)} {u.flux}
+                </td>
+              </tr>
+              <tr>
+                <td className={thClass}>비에너지 (SEC)</td>
+                <td className={tdClass}>{fmt(system.sec_kwhm3)} kWh/m³</td>
+                <td className={thClass}>{pressureLabel}</td>
+                <td className={tdClass}>
+                  {fmt(system.ndp_bar)} {u.pressure}
+                </td>
+              </tr>
+              {economics?.unit_cost > 0 && (
+                <tr>
+                  <td
+                    className={`${thClass} bg-emerald-50 text-emerald-900 border-emerald-400`}
+                  >
+                    생산 단가 (Unit Cost)
+                  </td>
+                  <td
+                    className={`${tdClass} font-black text-emerald-800 bg-emerald-50/50 border-emerald-400`}
+                  >
+                    {economics.currency || '$'} {fmt(economics.unit_cost, 3)}{' '}
+                    /m³
+                  </td>
+                  <td
+                    className={`${thClass} bg-emerald-50 text-emerald-900 border-emerald-400`}
+                  >
+                    일일 운영비 (Daily OPEX)
+                  </td>
+                  <td
+                    className={`${tdClass} font-bold text-emerald-800 bg-emerald-50/50 border-emerald-400`}
+                  >
+                    {economics.currency || '$'}{' '}
+                    {fmt(economics.daily_total_cost, 2)} /day
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <Section title="공정 개요 (Train Overview)">
           <TrainOverviewPanel stages={stages} />
         </Section>
+        <div className="h-3" />
 
-        <div className="h-4" />
-
-        <Section
-          title="추가 KPI"
-          icon={<FlaskConical className="w-4 h-4 opacity-70" />}
-        >
-          <KVGrid
-            cols={3}
-            items={[
-              { k: '제품 TDS', v: system.prod_tds, unit: 'mg/L' },
-              { k: 'Feed 유량', v: system.feed_m3h, unit: u.flow },
-              { k: '생산수 유량', v: system.permeate_m3h, unit: u.flow },
-            ]}
-          />
-        </Section>
-
-        <div className="h-4" />
-
-        <Section
-          title="스트림 요약"
-          icon={<Droplets className="w-4 h-4 opacity-70" />}
-          right={
-            <div className={THEME.MUTED}>
-              units: flow={u.flow}, pressure={u.pressure}, flux={u.flux}
-            </div>
-          }
-        >
+        <Section title="스트림 성분 및 수질 (Stream Composition & Water Quality)">
           <StreamTable feed={feed} perm={perm} brine={brine} u={u} />
         </Section>
+        <div className="h-3" />
 
-        <div className="h-4" />
-
-        <Section
-          title="Mass & Salt Balance"
-          icon={<ListChecks className="w-4 h-4 opacity-70" />}
-        >
-          {/* ✅ 백엔드에서 받아온 kpi.mass_balance를 BalancePanel로 넘겨줌 */}
+        <Section title="질량 및 염분 밸런스 (Mass & Salt Balance)">
           <BalancePanel feed={feed} perm={perm} brine={brine} kpi={kpi} u={u} />
         </Section>
-
-        <div className="mt-4 text-[10px] text-slate-500">
-          UF 스테이지 {ufCount}개 / HRRO 스테이지 {hrroCount}개 포함되어
-          있습니다. (아래 페이지에 스테이지별 상세 표시)
-        </div>
       </Page>
     );
 
     // =========================
-    // Page 2 (System detail)
+    // Page 2: Hydraulics & Performance (물리 엔진 성능)
     // =========================
     const page2 = (
       <Page key="page-2" breakBefore>
-        <div className="flex items-end justify-between mb-4">
+        <div className="mb-4 border-b-2 border-slate-800 pb-2 flex justify-between items-start">
           <div>
-            <div className={THEME.H2}>SYSTEM DETAILS</div>
-            <div className="text-2xl font-black text-slate-900">
-              스테이지 성능(요약)
+            <div className="text-[10px] font-bold text-slate-500 tracking-widest uppercase mb-1">
+              HYDRAULICS & PERFORMANCE
             </div>
+            <h2 className="text-lg font-black text-slate-900 uppercase leading-none">
+              수력학적 성능 요약 (Hydraulic Performance Summary)
+            </h2>
           </div>
-          <div className="text-right text-[10px] text-slate-500 font-mono">
-            Scenario: {scenarioId}
+          <div className="text-[9px] text-slate-400 font-mono mt-1">
+            AquaNova Simulation Engine
           </div>
         </div>
 
-        <Section
-          title="스테이지 테이블"
-          icon={<Activity className="w-4 h-4 opacity-70" />}
-          right={
-            <Badge
-              text={`${stages.length} stages`}
-              tone={stages.length ? 'blue' : 'slate'}
-            />
-          }
-        >
-          {!stages.length ? (
-            <div className="text-[10px] text-slate-500">No stage data.</div>
-          ) : (
-            <StageSummaryTable stages={stages} u={u} />
-          )}
+        <Section title="스테이지/패스 상세 성능 (Stage Performance Details)">
+          <StageSummaryTable stages={stages} u={u} />
         </Section>
+        <div className="h-3" />
 
-        <div className="h-4" />
-
-        <Section
-          title="Stage Water Quality"
-          icon={<Droplets className="w-4 h-4 opacity-70" />}
-          right={
-            <span className={THEME.MUTED}>
-              Wave-style quality table (best effort)
-            </span>
-          }
-        >
+        <Section title="스테이지별 수질 (Stage Water Quality)">
           <StageWaterQualityPanel stages={stages} u={u} />
         </Section>
+        <div className="h-3" />
 
-        <div className="h-4" />
-
-        <Section
-          title="스테이지 밸런스 차트"
-          icon={<BarChart3 className="w-4 h-4 opacity-70" />}
-        >
-          <SystemBalanceChart stageData={stageData} u={u} />
+        <Section title="스테이지 밸런스 차트 (Stage Balance Chart)">
+          <SystemBalanceChart
+            stageData={stages.map((s: any, idx: number) => ({
+              stage: s?.stage ?? idx + 1,
+              flux: s?.flux_lmh ?? s?.jw_avg_lmh ?? null,
+              ndp: s?.ndp_bar ?? null,
+              type: s?.module_type ?? 'RO',
+            }))}
+            u={u}
+          />
         </Section>
+      </Page>
+    );
 
-        <div className="h-4" />
+    // =========================
+    // Page 3: Chemistry, OPEX & Warnings (화학 및 경제성)
+    // =========================
+    const page3 = (
+      <Page key="page-3" breakBefore>
+        <div className="mb-4 border-b-2 border-slate-800 pb-2 flex justify-between items-start">
+          <div>
+            <div className="text-[10px] font-bold text-slate-500 tracking-widest uppercase mb-1">
+              CHEMISTRY & ECONOMICS
+            </div>
+            <h2 className="text-lg font-black text-slate-900 uppercase leading-none">
+              화학 및 경제성 평가 (Chemistry & Economics)
+            </h2>
+          </div>
+          <div className="text-[9px] text-slate-400 font-mono mt-1">
+            AquaNova Simulation Engine
+          </div>
+        </div>
 
-        <Section
-          title="Stage Distribution Summary"
-          icon={<Layers className="w-4 h-4 opacity-70" />}
-        >
-          <DistributionSummaryPanel stages={stages} u={u} />
-        </Section>
+        {safeData?.chemistry?.final_brine && (
+          <>
+            <Section title="스케일링 및 막 오염 지수 (Scaling & Fouling Indices)">
+              <BrineScalingPanel chemistry={safeData.chemistry} />
+            </Section>
+            <div className="h-3" />
+          </>
+        )}
 
-        <div className="h-4" />
+        {safeData?.dosing && (
+          <>
+            <Section title="지능형 약품 투입 제어 (Intelligent Chemical Dosing)">
+              <ChemicalDosingPanel dosing={safeData.dosing} u={u} />
+            </Section>
+            <div className="h-3" />
+          </>
+        )}
 
-        <Section
-          title="System Warnings"
-          icon={<AlertTriangle className="w-4 h-4 opacity-70" />}
-          right={<span className={THEME.MUTED}>Global System Guidelines</span>}
-        >
-          {/* ✅ 백엔드에서 집계된 globalWarnings를 Panel에 전달 */}
+        {/* 🟢 [NEW] 백엔드에서 받아온 OPEX 데이터를 전용 패널에 렌더링 */}
+        {economics?.unit_cost > 0 && (
+          <>
+            <OpexSummaryPanel economics={economics} />
+            <div className="h-4" />
+          </>
+        )}
+
+        <Section title="시스템 경고 및 진단 (System Warnings & Diagnostics)">
           <SystemWarningsPanel
             stages={stages}
             globalWarnings={safeArr(safeData.warnings)}
           />
         </Section>
-
-        {/* ✅ 새로 추가된 Brine Scaling Panel 렌더링 영역 */}
-        {safeObj(safeData.chemistry)?.final_brine && (
-          <>
-            <div className="h-4" />
-            <Section
-              title="농축수 스케일링 위험도 (Brine Scaling)"
-              icon={
-                <FlaskConical className="w-4 h-4 opacity-70 text-violet-400" />
-              }
-            >
-              <BrineScalingPanel chemistry={safeObj(safeData.chemistry)} />
-            </Section>
-          </>
-        )}
-
-        {mode === 'STAGE' ? (
-          <div className="mt-4 text-[10px] text-slate-500">
-            Mode=STAGE: 스테이지별 상세 페이지(UF/HRRO)는 아래에
-            포함됩니다(존재하는 경우).
-          </div>
-        ) : null}
       </Page>
     );
 
     // =========================
-    // Page 3 (Element profile)
+    // Page 4~: Stage Detail Pages Builder (모듈별 상세)
     // =========================
-    const elementProfileArr = safeArr(
-      elementProfile ??
-        safeData?.elementProfile ??
-        safeData?.element_profile ??
-        [],
-    );
-
-    const page3 =
-      elementProfileArr.length > 0 ? (
-        <Page key="page-3" breakBefore>
-          <div className="flex items-end justify-between mb-4">
-            <div>
-              <div className={THEME.H2}>ELEMENT DETAILS</div>
-              <div className="text-2xl font-black text-slate-900">
-                Element Performance (Wave-like)
-              </div>
-              <div className="mt-2 flex items-center gap-2">
-                <Badge
-                  text={`elements n=${elementProfileArr.length}`}
-                  tone="blue"
-                />
-              </div>
-            </div>
-            <div className="text-right text-[10px] text-slate-500 font-mono">
-              Scenario: {scenarioId}
-            </div>
-          </div>
-
-          <Section
-            title="Element Profile"
-            icon={<Layers className="w-4 h-4 opacity-70" />}
-            right={<span className={THEME.MUTED}>auto columns</span>}
-          >
-            <ElementProfilePanel elementProfile={elementProfileArr} u={u} />
-          </Section>
-        </Page>
-      ) : null;
-
-    // ==========================================================
-    // Stage Detail Page Builders
-    // ==========================================================
     const buildUfPage = (s: any, stageNo: number) => {
-      const moduleType = upper(s?.module_type) || 'UF';
-      const chem = safeObj(s?.chemistry);
-      const violations = safeArr(chem?.violations ?? []);
-
-      const recovery = s?.recovery_pct ?? null;
-      const flux = s?.flux_lmh ?? s?.jw_avg_lmh ?? null;
-      const tmp = s?.tmp_bar ?? s?.tmp ?? null;
-      const dp = s?.dp_bar ?? null;
-      const sec = s?.sec_kwhm3 ?? s?.sec_kwh_m3 ?? null;
-
-      const items = [
-        { k: '회수율', v: recovery, unit: '%' },
-        { k: '평균 Flux', v: flux, unit: u.flux },
-        {
-          k: tmp != null ? 'TMP' : 'ΔP',
-          v: tmp != null ? tmp : dp,
-          unit: u.pressure,
-        },
-        { k: '비에너지', v: sec, unit: 'kWh/m³' },
-
-        { k: 'Qf', v: s?.Qf ?? null, unit: u.flow },
-        { k: 'Qp', v: s?.Qp ?? null, unit: u.flow },
-        { k: 'Qc', v: s?.Qc ?? null, unit: u.flow },
-
-        { k: 'Cf', v: s?.Cf ?? null, unit: 'mg/L' },
-        { k: 'Cp', v: s?.Cp ?? null, unit: 'mg/L' },
-        { k: 'Cc', v: s?.Cc ?? null, unit: 'mg/L' },
-
-        { k: 'Pin', v: s?.p_in_bar ?? null, unit: u.pressure },
-        { k: 'Pout', v: s?.p_out_bar ?? null, unit: u.pressure },
-      ].filter((it) => notNil(it.v));
-
+      const type = upper(s?.module_type || s?.type || 'UF');
       return (
-        <Page key={`uf-${stageNo}`} breakBefore>
-          <div className="flex items-end justify-between mb-4">
+        <Page key={`filter-${stageNo}`} breakBefore>
+          <div className="mb-4 border-b-2 border-slate-800 pb-2 flex justify-between items-start">
             <div>
-              <div className={THEME.H2}>UF DETAILS</div>
-              <div className="text-2xl font-black text-slate-900">
-                UF 스테이지 {stageNo}
+              <div className="text-[10px] font-bold text-slate-500 tracking-widest uppercase mb-1">
+                {type} DETAILS
               </div>
-              <div className="mt-2 flex items-center gap-2">
-                <Badge text={`module_type=${moduleType}`} tone="blue" />
-                {violations.length ? (
-                  <ViolationsSummary violations={violations} />
-                ) : (
-                  <Badge text="No violations" tone="slate" />
-                )}
-              </div>
-            </div>
-            <div className="text-right text-[10px] text-slate-500 font-mono">
-              Scenario: {scenarioId}
+              <h2 className="text-lg font-black text-slate-900 uppercase leading-none">
+                {type} 스테이지 {stageNo} ({type} Stage {stageNo})
+              </h2>
             </div>
           </div>
-
-          <Section
-            title="핵심 KPI (best-effort)"
-            icon={<Waves className="w-4 h-4 opacity-70" />}
-            right={
-              <span className={THEME.MUTED}>있으면 표시 / 없으면 생략</span>
-            }
-          >
-            {!items.length ? (
-              <div className="text-[10px] text-slate-500">
-                표시 가능한 KPI가 없습니다. (Raw Stage를 확인하세요)
-              </div>
-            ) : (
-              <KVGrid cols={3} items={items} />
-            )}
-          </Section>
-
-          <div className="h-4" />
-
-          <Section
-            title="Stage Water Quality"
-            icon={<Droplets className="w-4 h-4 opacity-70" />}
-            right={<span className={THEME.MUTED}>single-stage view</span>}
-          >
-            <StageWaterQualityPanel stages={[s]} u={u} />
-          </Section>
-
-          <div className="h-4" />
-
-          <Section
-            title="Warnings (chemistry.violations)"
-            icon={<ShieldAlert className="w-4 h-4 opacity-70" />}
-          >
-            {!violations.length ? (
-              <div className="text-[10px] text-slate-500">
-                위반 사항이 없습니다.
-              </div>
-            ) : (
-              <ViolationsTable violations={violations} />
-            )}
-
-            <div className="mt-3">
-              <JsonDetails
-                titleKo="Raw UF chemistry (접기)"
-                obj={chem}
-                maxChars={12000}
-              />
-            </div>
-          </Section>
-
-          <div className="h-4" />
-
-          <Section
-            title="Raw Stage Object (접기)"
-            icon={<Database className="w-4 h-4 opacity-70" />}
-            right={<span className={THEME.MUTED}>debug / audit</span>}
-          >
-            <JsonDetails
-              titleKo="Raw UF stage (접기)"
-              obj={s}
-              maxChars={12000}
+          <Section title="핵심 성능 지표 (Key Performance Indicators)">
+            <UfDetailsPanel
+              stage={s}
+              systemKpi={kpi}
+              feedFlow={s?.Qf}
+              permFlow={s?.Qp}
+              u={u}
             />
+          </Section>
+          <div className="h-3" />
+          <Section title="스테이지별 수질 (Stage Water Quality)">
+            <StageWaterQualityPanel stages={[s]} u={u} />
           </Section>
         </Page>
       );
+    };
+
+    const buildRoPages = (s: any, stageNo: number) => {
+      const type = upper(s?.module_type || s?.type || 'RO');
+      return [
+        <Page key={`ro-${stageNo}-a`} breakBefore>
+          <div className="mb-4 border-b-2 border-slate-800 pb-2 flex justify-between items-start">
+            <div>
+              <div className="text-[10px] font-bold text-slate-500 tracking-widest uppercase mb-1">
+                {type} DETAILS
+              </div>
+              <h2 className="text-lg font-black text-slate-900 uppercase leading-none">
+                {type} 스테이지 {stageNo} ({type} Stage {stageNo})
+              </h2>
+            </div>
+          </div>
+          <Section title="엘리먼트 프로파일 (Element Profile)">
+            <ElementProfilePanel
+              elementProfile={safeArr(
+                s?.chemistry?.elements || s?.element_profiles || s?.elements,
+              )}
+              u={u}
+            />
+          </Section>
+        </Page>,
+      ];
     };
 
     const buildHrroPages = (s: any, stageNo: number) => {
-      const chem = safeObj(s?.chemistry);
-
-      const design = safeObj(
-        chem?.design_excel ?? chem?.designExcel ?? chem?.design ?? {},
-      );
-
-      const inputs = safeObj(design?.inputs ?? {});
-      const ccro = safeObj(design?.ccro ?? {});
-      const pf = safeObj(design?.pf ?? {});
-      const cc = safeObj(design?.cc ?? {});
-      const membrane = safeObj(design?.membrane ?? {});
-
-      const physics = safeObj(design?.physics ?? chem?.physics ?? {});
-      const guideline = safeObj(chem?.guideline ?? {});
-      const checks = safeObj(
-        chem?.guideline_checks ?? chem?.guidelineChecks ?? {},
-      );
-      const violations = safeArr(chem?.violations ?? []);
       const history = safeArr(s?.time_history);
-
-      const physicsHydraulics = safeObj(physics?.hydraulics ?? {});
-      const physicsDebug = safeObj(physics?.debug ?? {});
-
-      const pageA = (
+      return [
         <Page key={`hrro-${stageNo}-a`} breakBefore>
-          <div className="flex items-end justify-between mb-4">
+          <div className="mb-4 border-b-2 border-slate-800 pb-2 flex justify-between items-start">
             <div>
-              <div className={THEME.H2}>HRRO DETAILS</div>
-              <div className="text-2xl font-black text-slate-900">
-                HRRO 스테이지 {stageNo}
+              <div className="text-[10px] font-bold text-slate-500 tracking-widest uppercase mb-1">
+                HRRO DETAILS
               </div>
-              <div className="mt-2 flex items-center gap-2">
-                <Badge text="module_type=HRRO" tone="violet" />
-                <ViolationsSummary violations={violations} />
-              </div>
-            </div>
-            <div className="text-right text-[10px] text-slate-500 font-mono">
-              Scenario: {scenarioId}
+              <h2 className="text-lg font-black text-slate-900 uppercase leading-none">
+                HRRO 스테이지 {stageNo} (HRRO Stage {stageNo})
+              </h2>
             </div>
           </div>
-
-          <Section
-            title="핵심 결과(Wave-style status)"
-            icon={<Gauge className="w-4 h-4 opacity-70" />}
-            right={
-              <span className={THEME.MUTED}>Target/Achieved/Limit/Status</span>
-            }
-          >
-            <HRROCoreStatusTable physics={physics} u={u} />
+          <Section title="운전 상태 (Target vs Achieved)">
+            <HRROCoreStatusTable stage={s} u={u} />
           </Section>
-
-          <div className="h-4" />
-
-          <Section
-            title="가이드라인/체크"
-            icon={<ShieldAlert className="w-4 h-4 opacity-70" />}
-          >
-            {!violations.length ? (
-              <div className="text-[10px] text-slate-500">
-                위반 사항이 없습니다.
-              </div>
-            ) : (
-              <ViolationsTable violations={violations} />
-            )}
-
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <JsonDetails titleKo="Guideline Profile (접기)" obj={guideline} />
-              <JsonDetails titleKo="Guideline Checks (접기)" obj={checks} />
-            </div>
-          </Section>
-
-          <div className="h-4" />
-
-          <Section
-            title="상세 데이터(접기)"
-            icon={<Database className="w-4 h-4 opacity-70" />}
-            right={<span className={THEME.MUTED}>기본은 요약만 표시</span>}
-          >
-            <div className="grid grid-cols-2 gap-3">
-              <JsonDetails titleKo="Excel Inputs (접기)" obj={inputs} />
-              <JsonDetails titleKo="Excel CCRO Results (접기)" obj={ccro} />
-              <JsonDetails titleKo="Excel PF Results (접기)" obj={pf} />
-              <JsonDetails titleKo="Excel CC/Recycle (접기)" obj={cc} />
-              <JsonDetails titleKo="Membrane / Array (접기)" obj={membrane} />
-              <JsonDetails
-                titleKo="Physics Hydraulics (접기)"
-                obj={physicsHydraulics}
-              />
-              <JsonDetails titleKo="Physics Debug (접기)" obj={physicsDebug} />
-            </div>
-
-            <div className="mt-3">
-              <JsonDetails
-                titleKo="Raw HRRO chemistry (접기)"
-                obj={chem}
-                maxChars={12000}
-              />
-            </div>
-          </Section>
-        </Page>
-      );
-
-      const pageB =
-        history.length > 0 ? (
-          <Page key={`hrro-${stageNo}-b`} breakBefore>
-            <div className="flex items-end justify-between mb-4">
-              <div>
-                <div className={THEME.H2}>HRRO TIME HISTORY</div>
-                <div className="text-2xl font-black text-slate-900">
-                  HRRO 스테이지 {stageNo} · 배치 사이클
-                </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <Badge text={`history n=${history.length}`} tone="blue" />
-                  <Badge text="MIN/AVG/MAX/END" tone="slate" />
-                </div>
-              </div>
-              <div className="text-right text-[10px] text-slate-500 font-mono">
-                Scenario: {scenarioId}
-              </div>
-            </div>
-
-            <Section
-              title="배치 사이클 차트"
-              icon={<Clock className="w-4 h-4 opacity-70" />}
-            >
-              <HRROHistoryChart history={history} unitLabels={u} />
-            </Section>
-
-            <div className="h-4" />
-
-            <Section
-              title="Time History 요약 통계"
-              icon={<ListChecks className="w-4 h-4 opacity-70" />}
-            >
-              <HistoryStatsTable history={history} u={u} />
-            </Section>
-
-            <div className="h-4" />
-
-            <Section
-              title="Time History 테이블(일부)"
-              icon={<FileText className="w-4 h-4 opacity-70" />}
-            >
-              <TimeHistoryTable history={history} maxRows={12} />
-            </Section>
-          </Page>
-        ) : null;
-
-      return [pageA, ...(pageB ? [pageB] : [])];
+        </Page>,
+        ...(history.length > 0
+          ? [
+              <Page key={`hrro-${stageNo}-b`} breakBefore>
+                <Section title="배치 사이클 시계열 데이터">
+                  <HRROHistoryChart history={history} unitLabels={u} />
+                </Section>
+                <div className="h-3" />
+                <Section title="통계 요약">
+                  <HistoryStatsTable history={history} u={u} />
+                </Section>
+              </Page>,
+            ]
+          : []),
+      ];
     };
 
-    // ==========================================================
-    // Stage detail pages: stage order 유지 (UF->HRRO 순서 보장)
-    // ==========================================================
     const stageDetailPages = stages
-      .map((s: any, idx: number) => {
-        const stageNo = Number(s?.stage ?? idx + 1);
-        return {
-          stageNo: Number.isFinite(stageNo) ? stageNo : idx + 1,
-          moduleType: upper(s?.module_type),
-          s,
-        };
-      })
+      .map((s: any, idx: number) => ({
+        stageNo: Number(s?.stage ?? idx + 1),
+        s,
+      }))
       .sort((a, b) => a.stageNo - b.stageNo)
-      .flatMap(({ stageNo, moduleType, s }) => {
-        if (moduleType === 'UF') return [buildUfPage(s, stageNo)];
-        if (moduleType === 'HRRO') return buildHrroPages(s, stageNo);
+      .flatMap(({ stageNo, s }) => {
+        const type = upper(s?.module_type || s?.type || s?.membrane_model);
+        if (type === 'UF' || type === 'MF') return [buildUfPage(s, stageNo)];
+        if (type === 'RO' || type === 'NF') return buildRoPages(s, stageNo);
+        if (type === 'HRRO') return buildHrroPages(s, stageNo);
         return [];
       });
 
     return (
-      <div ref={ref} className="print:w-full">
+      <div
+        ref={ref}
+        className="print:w-full font-sans text-slate-800 bg-white [-webkit-print-color-adjust:exact] print:color-adjust-exact"
+      >
         {page1}
         {page2}
         {page3}

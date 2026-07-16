@@ -1,4 +1,4 @@
-// ui\src\features\simulation\components\IonTable.tsx
+// ui/src/features/simulation/components/IonTable.tsx
 import React from 'react';
 import type { IonDef } from '../chemistry';
 import { fmtInputNumber, fmtNumber, n0 } from '../chemistry';
@@ -52,15 +52,21 @@ export function IonTable({
             const meqL = showDerived ? mgL_to_meqL(mgL, d.mw, d.z) : 0;
             const ppm = showDerived ? meqL_to_ppmCaCO3(meqL) : 0;
 
+            // 🚀 [붕소 패치] 붕소(B) 입력창은 무조건 활성화
+            const isBoron = d.key.toLowerCase() === 'b';
+
             return (
               <div
                 key={d.key}
                 className={`grid grid-cols-4 gap-2 items-center px-2 ${
                   compact ? 'py-[5px]' : 'py-1'
-                } rounded border border-slate-800/70 bg-slate-950/40 hover:border-slate-700 transition-colors`}
+                } rounded border border-slate-800/70 bg-slate-950/40 hover:border-slate-700 transition-colors ${
+                  isBoron ? 'ring-1 ring-blue-500/50 bg-blue-900/10' : ''
+                }`}
               >
                 <div className="text-[11px] font-semibold text-slate-300 w-12">
                   {d.label}
+                  {isBoron && <span className="text-blue-400 ml-1">*</span>}
                 </div>
 
                 <input
@@ -78,10 +84,10 @@ export function IonTable({
                 />
 
                 <div className="text-right text-[11px] font-mono text-slate-400">
-                  {showDerived ? fmtNumber(ppm, 1) : '—'}
+                  {showDerived && !isBoron ? fmtNumber(ppm, 1) : '—'}
                 </div>
                 <div className="text-right text-[11px] font-mono text-slate-400">
-                  {showDerived ? fmtNumber(meqL, 3) : '—'}
+                  {showDerived && !isBoron ? fmtNumber(meqL, 3) : '—'}
                 </div>
               </div>
             );

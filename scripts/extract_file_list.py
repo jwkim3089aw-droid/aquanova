@@ -12,7 +12,6 @@ def list_code_files():
     target_root_path = current_script_path.parent
 
     # 2. 찾고자 하는 코드 파일 확장자 설정
-    # 🛑 [수정됨] React UI 컴포넌트 확장자(.tsx, .jsx) 추가!
     CODE_EXTENSIONS = {
         ".py",
         ".c",
@@ -21,8 +20,8 @@ def list_code_files():
         ".hpp",
         ".js",
         ".ts",
-        ".tsx",  # <-- 추가됨! (React TypeScript 컴포넌트)
-        ".jsx",  # <-- 추가됨! (React JavaScript 컴포넌트)
+        ".tsx",
+        ".jsx",
         ".html",
         ".css",
         ".java",
@@ -30,6 +29,7 @@ def list_code_files():
         ".json",
         ".xml",
         ".yaml",
+        ".log",
     }
 
     # 3. 제외할 폴더명 (검색하고 싶지 않은 폴더)

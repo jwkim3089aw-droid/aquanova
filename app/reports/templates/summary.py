@@ -4,15 +4,18 @@ from typing import Any, Dict, List, Tuple
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
-from reportlab.lib.colors import black, red, darkblue
+from reportlab.lib.colors import HexColor
 from reportlab.pdfgen import canvas
 
 from .common import ensure_font, fmt_num, draw_table, draw_hline
 
-# --- robust helpers ----------------------------------------------------------
+COLOR_PRIMARY = HexColor("#0F4C81")
+COLOR_WARNING = HexColor("#D32F2F")
+COLOR_TEXT = HexColor("#333333")
+COLOR_LINE = HexColor("#CFD8DC")
+
 _STAGE_KEYS = ("stage", "stage_no", "stage_index", "stage_id", "idx")
 _TYPE_KEYS = ("module_type", "type", "module", "unit_op")
-
 _PIN_KEYS = ("p_in_bar", "pin", "pin_bar", "inlet_pressure_bar", "inlet_bar", "p_in")
 _POUT_KEYS = (
     "p_out_bar",
@@ -29,57 +32,48 @@ _SEC_KEYS = ("sec_kwhm3", "sec_kwh_m3", "SEC_kWh_m3", "SEC_total")
 def _as_dict(m: Any) -> Dict[str, Any]:
     if isinstance(m, dict):
         return m
-    if hasattr(m, "model_dump"):  # Pydantic V2
-        try:
-            return m.model_dump()
-        except:
-            pass
-    if hasattr(m, "dict"):  # Pydantic V1
-        try:
-            return m.dict()
-        except:
-            pass
+    for method in ("model_dump", "dict"):
+        if hasattr(m, method):
+            try:
+                return getattr(m, method)()
+            except Exception:
+                pass
     try:
         return dict(m)
-    except:
+    except Exception:
         return {}
 
 
-def _get_first(d: Dict[str, Any], keys: Tuple[str, ...], default=None):
-    for k in keys:
-        if k in d and d[k] is not None:
-            return d[k]
-    return default
+def _get_first(d: Dict[str, Any], keys: Tuple[str, ...], default: Any = None) -> Any:
+    return next((d[k] for k in keys if d.get(k) is not None), default)
 
 
 def _num(v: Any) -> float | None:
     try:
         return float(v) if v is not None else None
-    except:
+    except (ValueError, TypeError):
         return None
 
 
 def _dp(pin: Any, pout: Any) -> float | None:
     a, b = _num(pin), _num(pout)
-    if a is None or b is None:
-        return None
-    return a - b
+    return a - b if a is not None and b is not None else None
 
 
-def _rows_from_stage_metrics(stage_metrics: List[Any] | None) -> List[List[str]]:
+def _rows_from_stage_metrics(stage_metrics: List[Any] | None) -> List[List[Any]]:
     if not stage_metrics:
         return []
+
     rows = []
     for m0 in stage_metrics:
         m = _as_dict(m0)
-        stg = _get_first(m, _STAGE_KEYS, None)
-        mtype = _get_first(m, _TYPE_KEYS, None)
-        pin = _get_first(m, _PIN_KEYS, None)
-        pout = _get_first(m, _POUT_KEYS, None)
-        jw = _get_first(m, _JW_KEYS, None)
-        sec = _get_first(m, _SEC_KEYS, None)
-        dp = _get_first(m, ("dp_bar", "delta_p_bar", "deltaP_bar"), None)
-        dp = dp if dp is not None else _dp(pin, pout)
+        stg = _get_first(m, _STAGE_KEYS)
+        mtype = _get_first(m, _TYPE_KEYS)
+        pin = _get_first(m, _PIN_KEYS)
+        pout = _get_first(m, _POUT_KEYS)
+        jw = _get_first(m, _JW_KEYS)
+        sec = _get_first(m, _SEC_KEYS)
+        dp = _get_first(m, ("dp_bar", "delta_p_bar", "deltaP_bar"), _dp(pin, pout))
 
         stage_lbl = (
             str(int(stg))
@@ -107,10 +101,7 @@ def _rows_from_stage_metrics(stage_metrics: List[Any] | None) -> List[List[str]]
             )
         )
 
-    try:
-        rows.sort(key=lambda x: (9999 if x[0] is None else float(x[0])))
-    except:
-        pass
+    rows.sort(key=lambda x: (9999 if x[0] is None else _num(x[0]) or 9999))
     return [r for _, r in rows]
 
 
@@ -123,7 +114,26 @@ def _check_page_break(
     return y
 
 
-# --- public ------------------------------------------------------------------
+def _draw_section_header(
+    c: canvas.Canvas,
+    title: str,
+    x0: float,
+    x1: float,
+    y: float,
+    font: str,
+    color: HexColor = COLOR_PRIMARY,
+) -> float:
+    y -= 10
+    c.setFont(font, 12)
+    c.setFillColor(color)
+    c.drawString(x0, y, title)
+    y -= 6
+    c.setStrokeColor(COLOR_LINE)
+    draw_hline(c, x0, x1, y)
+    c.setFillColor(COLOR_TEXT)
+    return y - 14
+
+
 def draw_system_summary(
     c: canvas.Canvas,
     streams: list[dict],
@@ -141,15 +151,13 @@ def draw_system_summary(
 
     kpi_dict = _as_dict(kpi)
 
-    # ==========================================
-    # 1. System Summary (WAVE Style Overview)
-    # ==========================================
     c.setFont(font, 16)
-    c.setFillColor(darkblue)
+    c.setFillColor(COLOR_PRIMARY)
     c.drawString(x0, y, "System Summary")
-    c.setFillColor(black)
     y -= 8
+    c.setStrokeColor(COLOR_LINE)
     draw_hline(c, x0, x1, y)
+    c.setFillColor(COLOR_TEXT)
     y -= 14
 
     c.setFont(font, 10)
@@ -165,57 +173,45 @@ def draw_system_summary(
         (f"Average Flux ({units.get('flux','LMH')})", ("flux_lmh", "jw_avg_lmh")),
     ]
     for label, keys in k_map:
-        val = _get_first(kpi_dict, keys, None)
-        c.drawString(x0, y, f"- {label}: {fmt_num(val, 3)}")
+        val = _get_first(kpi_dict, keys)
+        c.drawString(x0, y, f"• {label}: {fmt_num(val, 3)}")
         y -= 14
         y = _check_page_break(c, y, H)
 
-    # ==========================================
-    # 2. Mass & Salt Balance (WAVE Parity)
-    # ==========================================
     mb = kpi_dict.get("mass_balance")
     if mb:
-        y -= 10
-        c.setFont(font, 12)
-        c.setFillColor(darkblue)
-        c.drawString(x0, y, "Mass & Salt Balance (Closure Check)")
-        c.setFillColor(black)
-        y -= 6
-        draw_hline(c, x0, x1, y)
-        y -= 14
-
+        y = _draw_section_header(
+            c, "Mass & Salt Balance (Closure Check)", x0, x1, y, font
+        )
         c.setFont(font, 10)
         c.drawString(
             x0,
             y,
-            f"- Flow Closure Error: {fmt_num(mb.get('flow_error_pct'), 2)} % ({fmt_num(mb.get('flow_error_m3h'), 4)} m³/h)",
+            f"• Flow Closure Error: {fmt_num(mb.get('flow_error_pct'), 2)} % ({fmt_num(mb.get('flow_error_m3h'), 4)} m³/h)",
         )
         y -= 14
         c.drawString(
             x0,
             y,
-            f"- Salt Closure Error: {fmt_num(mb.get('salt_error_pct'), 2)} % ({fmt_num(mb.get('salt_error_kgh'), 2)} kg/h)",
+            f"• Salt Closure Error: {fmt_num(mb.get('salt_error_pct'), 2)} % ({fmt_num(mb.get('salt_error_kgh'), 2)} kg/h)",
         )
         y -= 14
         c.drawString(
-            x0, y, f"- System Rejection: {fmt_num(mb.get('system_rejection_pct'), 2)} %"
+            x0, y, f"• System Rejection: {fmt_num(mb.get('system_rejection_pct'), 2)} %"
         )
         y -= 14
         y = _check_page_break(c, y, H)
 
-    # ==========================================
-    # 3. System Warnings
-    # ==========================================
     if warnings:
-        y -= 10
-        c.setFont(font, 12)
-        c.setFillColor(red)
-        c.drawString(x0, y, f"System Warnings ({len(warnings)})")
-        c.setFillColor(black)
-        y -= 6
-        draw_hline(c, x0, x1, y)
-        y -= 14
-
+        y = _draw_section_header(
+            c,
+            f"System Warnings ({len(warnings)})",
+            x0,
+            x1,
+            y,
+            font,
+            color=COLOR_WARNING,
+        )
         c.setFont(font, 9)
         for w in warnings:
             w_dict = _as_dict(w)
@@ -225,20 +221,12 @@ def draw_system_summary(
             y -= 12
             y = _check_page_break(c, y, H)
 
-    # ==========================================
-    # 4. Brine Scaling & Solubility (Chemistry)
-    # ==========================================
-    if chemistry and chemistry.get("final_brine"):
-        brine = chemistry.get("final_brine")
-        y -= 10
-        c.setFont(font, 12)
-        c.setFillColor(darkblue)
-        c.drawString(x0, y, "Brine Scaling & Solubility (Saturation %)")
-        c.setFillColor(black)
-        y -= 6
-        draw_hline(c, x0, x1, y)
-        y -= 14
-
+    chem_dict = _as_dict(chemistry)
+    if chem_dict and chem_dict.get("final_brine"):
+        brine = _as_dict(chem_dict.get("final_brine"))
+        y = _draw_section_header(
+            c, "Brine Scaling & Solubility (Saturation %)", x0, x1, y, font
+        )
         c.setFont(font, 10)
         scale_map = [
             ("LSI", "lsi", ""),
@@ -247,26 +235,14 @@ def draw_system_summary(
             ("BaSO4 Saturation", "baso4_sat_pct", "%"),
             ("Silica (SiO2) Saturation", "sio2_sat_pct", "%"),
         ]
-
         for lbl, key, unit in scale_map:
             val = brine.get(key)
             if val is not None:
-                c.drawString(x0, y, f"- {lbl}: {fmt_num(val, 2)} {unit}")
+                c.drawString(x0, y, f"• {lbl}: {fmt_num(val, 2)} {unit}")
                 y -= 14
                 y = _check_page_break(c, y, H)
 
-    # ==========================================
-    # 5. Per-Stage Metrics Table
-    # ==========================================
-    y -= 10
-    c.setFont(font, 12)
-    c.setFillColor(darkblue)
-    c.drawString(x0, y, "Per-Stage Metrics")
-    c.setFillColor(black)
-    y -= 6
-    draw_hline(c, x0, x1, y)
-    y -= 14
-
+    y = _draw_section_header(c, "Per-Stage Metrics", x0, x1, y, font)
     headers = [
         "Stage",
         "Type",
@@ -276,7 +252,6 @@ def draw_system_summary(
         f"Flux ({units.get('flux','LMH')})",
         "SEC (kWh/m³)",
     ]
-
     rows = _rows_from_stage_metrics(stage_metrics)
     total_w = x1 - x0
     col_ws = [

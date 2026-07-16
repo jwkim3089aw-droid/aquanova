@@ -2,167 +2,325 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.v1.schemas import SimulationRequest, ScenarioOutput
 from app.db.models import Scenario
 from app.db.session import get_db
+from app.schemas.simulation import ScenarioOutput, SimulationRequest
 from app.services.simulation.engine import SimulationEngine
+from app.services.simulation.wave_corrected_engine import (
+    run_simulation_with_optional_wave_correction,
+)
 
-# Project 모델이 없을 수도 있으니(모듈 구조/순환참조 등), 안전하게 import
+
+# --- V123A public precision report sanitizer ---
+def _v123a_public_precision_report(report):
+    if not isinstance(report, dict):
+        return report
+
+    corrections = []
+    for item in report.get("corrections") or []:
+        if not isinstance(item, dict):
+            continue
+        corrections.append(
+            {
+                "metric": item.get("metric"),
+                "status": item.get("status"),
+                "raw_value": item.get("raw_value"),
+                "corrected_value": item.get("corrected_value"),
+            }
+        )
+
+    return {
+        "schema_version": "aquanova.precision_report.v123",
+        "enabled": bool(report.get("enabled", False)),
+        "mode": "precision" if report.get("enabled", False) else "raw",
+        "status": report.get("status"),
+        "applied_count": int(report.get("applied_count") or 0),
+        "skipped_count": int(report.get("skipped_count") or 0),
+        "process_type": report.get("process_type"),
+        "scope": report.get("regime") or report.get("scope"),
+        "corrections": corrections,
+    }
+
+
+def _v123a_sanitize_simulation_response_public(obj):
+    if obj is None:
+        return obj
+
+    if isinstance(obj, dict):
+        if "precision_report" in obj:
+            obj["precision_report"] = _v123a_public_precision_report(
+                obj.get("precision_report")
+            )
+        return obj
+
+    try:
+        if hasattr(obj, "precision_report"):
+            obj.precision_report = _v123a_public_precision_report(
+                getattr(obj, "precision_report", None)
+            )
+    except Exception:
+        pass
+
+
+# Project 모델 안전한 가져오기
 try:
-    from app.db.models import Project  # type: ignore
-except Exception:
-    Project = None  # type: ignore
-
+    from app.db.models import Project
+except ImportError:
+    Project = None
 
 router = APIRouter(tags=["simulations"])
 
-
-# -----------------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------------
-def _to_dict(obj: Any) -> Dict[str, Any]:
-    if obj is None:
-        return {}
-    if isinstance(obj, dict):
-        return obj
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    return dict(obj)
+# =============================================================================
+# 1. Private Domain Logic (ID & Persistence)
+# =============================================================================
 
 
-def _try_parse_uuid(v: Any) -> Optional[uuid.UUID]:
-    if v is None:
-        return None
-    if isinstance(v, uuid.UUID):
-        return v
-    try:
-        return uuid.UUID(str(v).strip())
-    except Exception:
-        return None
+class _SimulationService:
+    """엔드포인트에서 호출하는 비즈니스 로직 및 영속화 서비스 클래스"""
 
+    @staticmethod
+    def resolve_project_uuid(project_id_raw: Any, fallback: str) -> uuid.UUID:
+        """문자열 아이디를 결정론적 UUID v5로 변환"""
+        if isinstance(project_id_raw, uuid.UUID):
+            return project_id_raw
 
-def _coerce_project_uuid(project_id_raw: Any, *, fallback_key: str) -> uuid.UUID:
-    """
-    project_id_raw가:
-      - uuid.UUID or UUID string -> 그대로 UUID로
-      - 'e2e' 같은 문자열        -> uuid5로 deterministic UUID 생성
-      - None/빈값               -> fallback_key 기반 uuid5
-    """
-    u = _try_parse_uuid(project_id_raw)
-    if u is not None:
-        return u
-
-    if isinstance(project_id_raw, str) and project_id_raw.strip():
-        key = project_id_raw.strip()
-        return uuid.uuid5(uuid.NAMESPACE_URL, f"project:{key}")
-
-    return uuid.uuid5(uuid.NAMESPACE_URL, f"project:{fallback_key}")
-
-
-def _ensure_project_row(db: Session, project_uuid: uuid.UUID, project_key: str) -> None:
-    """
-    FK가 엄격한 DB에서 Scenario.project_id 삽입이 실패하지 않도록,
-    Project 모델이 존재하면 해당 UUID의 row를 미리 보장한다.
-
-    - commit 하지 않고 flush만 수행: 이후 Scenario commit과 함께 한 트랜잭션으로 커밋됨.
-    """
-    if Project is None:
-        # Project 모델이 import 불가인데 FK가 켜져있으면 Scenario insert에서 실패할 수 있음.
-        # (그 경우 DB 에러 detail로 확인 가능)
-        return
-
-    existing = db.get(Project, project_uuid)
-    if existing:
-        return
-
-    p = Project()  # type: ignore
-
-    # id 강제 주입 (UUIDMixin이 있어도 안전)
-    if hasattr(p, "id"):
-        setattr(p, "id", project_uuid)
-
-    # Project.name은 보통 NOT NULL이므로 반드시 채워준다
-    name_value = project_key.strip() if project_key else "default"
-    if hasattr(p, "name"):
-        setattr(p, "name", name_value)
-    else:
-        # name 필드가 다른 이름이면 best-effort
-        for f in ("project_name", "title"):
-            if hasattr(p, f):
-                setattr(p, f, name_value)
-                break
-
-    # description optional이면 채워줌
-    if hasattr(p, "description"):
         try:
-            setattr(p, "description", "auto-created by /simulation/run")
-        except Exception:
-            pass
+            return uuid.UUID(str(project_id_raw).strip())
+        except (ValueError, AttributeError):
+            # URL 네임스페이스를 기준으로 프로젝트 식별자 생성
+            name = str(project_id_raw).strip() if project_id_raw else fallback
+            return uuid.uuid5(uuid.NAMESPACE_URL, f"aquanova:project:{name}")
 
-    db.add(p)
-    # flush로 INSERT만 날려 FK 참조 가능하게 만듦
-    db.flush()
+    @staticmethod
+    def ensure_project(db: Session, project_uuid: uuid.UUID, name: str) -> None:
+        """프로젝트 행 존재 보장 (Upsert 개념)"""
+        if Project is None or db.get(Project, project_uuid):
+            return
+
+        new_project = Project(
+            id=project_uuid,
+            name=name or "Default Project",
+            description="Auto-created by simulation engine",
+        )
+        db.add(new_project)
+        try:
+            db.flush()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to ensure project: {e}")
+
+    @classmethod
+    def persist_scenario(
+        self, db: Session, request: SimulationRequest, result: ScenarioOutput
+    ) -> uuid.UUID:
+        """시뮬레이션 입력과 결과를 DB에 박제"""
+        project_id_raw = getattr(request, "project_id", "default")
+        project_uuid = self.resolve_project_uuid(
+            project_id_raw, str(request.simulation_id)
+        )
+
+        self.ensure_project(db, project_uuid, str(project_id_raw))
+
+        new_scenario = Scenario(
+            id=uuid.uuid4(),
+            project_id=project_uuid,
+            name=request.scenario_name or f"Sim-{datetime.now().strftime('%m%d%H%M')}",
+            input_json=request.model_dump(),
+            output_json=result.model_dump(),
+        )
+
+        db.add(new_scenario)
+        db.commit()
+        db.refresh(new_scenario)
+        return new_scenario.id
 
 
-# -----------------------------------------------------------------------------
-# Endpoint
-# -----------------------------------------------------------------------------
-@router.post("/run", response_model=ScenarioOutput)
+# =============================================================================
+# 2. HTTP Endpoints (Controller)
+# =============================================================================
+
+
+@router.post("/run", response_model=ScenarioOutput, response_model_exclude_none=True)
 def run_simulation(request: SimulationRequest, db: Session = Depends(get_db)):
-    logger.info(f"🚀 [Simulation Start] ID: {request.simulation_id}")
+    """
+    [Core] 수처리 시뮬레이션 엔진 구동
+    """
+    logger.info(f"🚀 [Simulation] Starting engine for ID: {request.simulation_id}")
 
     try:
-        # 1) Run engine
-        engine = SimulationEngine()
-        result = engine.run(request)
-
-        # 2) Normalize payload/result
-        req_dict: Dict[str, Any] = request.model_dump()
-        res_dict: Dict[str, Any] = _to_dict(result)
-
-        # 3) Resolve project UUID (project_id가 'e2e'여도 DB는 UUID로 저장)
-        project_key_raw = req_dict.get("project_id")
-        fallback_key = str(req_dict.get("simulation_id") or "default")
-        project_uuid = _coerce_project_uuid(project_key_raw, fallback_key=fallback_key)
-
-        # FK 보장 (가능한 경우)
-        _ensure_project_row(db, project_uuid, str(project_key_raw or "default"))
-
-        # 4) Persist Scenario
-        scn = Scenario()
-
-        # ✅ UUID 컬럼 방어: id/project_id는 uuid.UUID 객체
-        if hasattr(scn, "id"):
-            scn.id = uuid.uuid4()
-
-        scn.project_id = project_uuid
-        scn.name = (
-            req_dict.get("scenario_name") or req_dict.get("simulation_id") or "Untitled"
+        # 1) 엔진 계산 실행
+        # V120: explicit WAVE correction opt-in. Default path stays raw SimulationEngine.
+        wave_correction_enabled = bool(
+            (
+                getattr(request, "precision_mode_enabled", False)
+                or getattr(request, "wave_correction_enabled", False)
+            )
         )
-        scn.input_json = req_dict
+        calibration_mode = (
+            str(getattr(request, "calibration_mode", "") or "").strip().lower()
+        )
+        wave_correction_enabled = wave_correction_enabled or calibration_mode in {
+            "wave",
+            "wave_opt_in",
+            "precision",
+            "calibrated",
+            "validated",
+            "wave_correction",
+            "wave_calibrated",
+        }
+        if wave_correction_enabled:
+            result, correction_report = run_simulation_with_optional_wave_correction(
+                request,
+                options={"enable_wave_correction": True},
+            )
+            try:
+                if hasattr(result, "model_copy"):
+                    result = result.model_copy(
+                        update={"precision_report": correction_report}
+                    )
+                elif hasattr(result, "copy"):
+                    result = result.copy(update={"precision_report": correction_report})
+                else:
+                    setattr(result, "precision_report", correction_report)
+            except Exception:
+                logger.warning(
+                    "WAVE correction report could not be attached to response",
+                    exc_info=True,
+                )
+        else:
+            engine = SimulationEngine()
+            result = engine.run(request)
 
-        db.add(scn)
-        db.commit()
-        db.refresh(scn)
+        # 2) DB 영속화 (선택 사항: 필요 시 주석 해제)
+        # sc_id = _SimulationService.persist_scenario(db, request, result)
+        sc_id = uuid.uuid4()  # DB 저장 스킵 시 임시 ID 발급
 
-        # 5) Return response with persisted scenario_id
-        scenario_id_str = str(scn.id)
-
-        if hasattr(result, "model_copy"):
-            return result.model_copy(update={"scenario_id": scenario_id_str})
-
-        res_dict["scenario_id"] = scenario_id_str
-        return res_dict
+        # 3) 결과 반환
+        return _v123a_sanitize_simulation_response_public(result).model_copy(
+            update={"scenario_id": str(sc_id)}
+        )
 
     except ValueError as e:
-        logger.warning(f"⚠️ Validation Error: {e}")
+        logger.warning(f"⚠️ Simulation Validation: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.exception("🔥 Internal Simulation Error")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("🔥 Internal Simulation Engine Error")
+        raise HTTPException(status_code=500, detail="Internal processing error")
+
+
+# =============================================================================
+# 3. Canvas Management (Save/Load/List)
+# =============================================================================
+
+
+class CanvasSaveRequest(BaseModel):
+    scenario_id: Optional[str] = None
+    name: str = Field(..., description="시나리오 이름")
+    project_id: str = Field(default="default", description="프로젝트 ID")
+    canvas_state: dict = Field(..., description="UI 노드 및 엣지 상태 데이터")
+
+
+class ScenarioListItem(BaseModel):
+    id: str
+    name: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+@router.post("/save", response_model=Dict[str, str])
+def save_canvas(req: CanvasSaveRequest, db: Session = Depends(get_db)):
+    """프론트엔드 캔버스 상태(Node/Edge)를 Upsert 방식으로 저장"""
+
+    project_uuid = _SimulationService.resolve_project_uuid(
+        req.project_id, "canvas_save"
+    )
+    _SimulationService.ensure_project(db, project_uuid, req.project_id)
+
+    scenario_uuid = None
+    if req.scenario_id:
+        try:
+            scenario_uuid = uuid.UUID(req.scenario_id)
+        except ValueError:
+            pass
+
+    # Upsert 로직
+    scenario = db.get(Scenario, scenario_uuid) if scenario_uuid else None
+
+    if not scenario:
+        scenario = Scenario(id=uuid.uuid4(), project_id=project_uuid)
+        db.add(scenario)
+
+    scenario.name = req.name
+    scenario.input_json = req.canvas_state
+
+    if hasattr(scenario, "updated_at"):
+        scenario.updated_at = datetime.utcnow()
+
+    db.commit()
+    return {"message": "저장되었습니다.", "scenario_id": str(scenario.id)}
+
+
+@router.get("/scenarios", response_model=List[ScenarioListItem])
+def list_scenarios(db: Session = Depends(get_db)):
+    """저장된 시나리오 목록 조회 (최신순 50개)"""
+    query = db.query(Scenario)
+
+    if hasattr(Scenario, "created_at"):
+        query = query.order_by(Scenario.created_at.desc())
+    else:
+        query = query.order_by(Scenario.id.desc())
+
+    scenarios = query.limit(50).all()
+    return [
+        ScenarioListItem(
+            id=str(s.id),
+            name=s.name or "Untitled",
+            created_at=getattr(s, "created_at", datetime.utcnow()),
+            updated_at=getattr(s, "updated_at", None),
+        )
+        for s in scenarios
+    ]
+
+
+@router.get("/scenarios/{scenario_id}")
+def get_scenario(scenario_id: str, db: Session = Depends(get_db)):
+    """특정 시나리오의 캔버스 데이터 로드"""
+    try:
+        sc_uuid = uuid.UUID(scenario_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    scenario = db.get(Scenario, sc_uuid)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+
+    return {
+        "id": str(scenario.id),
+        "name": scenario.name,
+        "canvas_state": scenario.input_json,
+    }
+
+
+@router.delete("/scenarios/{scenario_id}")
+def delete_scenario(scenario_id: str, db: Session = Depends(get_db)):
+    """시나리오 영구 삭제"""
+    try:
+        sc_uuid = uuid.UUID(scenario_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    scenario = db.get(Scenario, sc_uuid)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+
+    db.delete(scenario)
+    db.commit()
+    return {"message": "Deleted successfully"}

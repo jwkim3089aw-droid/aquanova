@@ -9,25 +9,25 @@
 
 /* 브라우저 다크 컬러 스킴 힌트 */
 :root {
-  color-scheme: dark; /* [UNCHANGED] */
+  color-scheme: dark;
 }
 
 /* 전체 배경 / 기본 텍스트 */
 body {
-  @apply bg-slate-950 text-slate-100; /* [UNCHANGED] */
+  @apply bg-slate-950 text-slate-100;
 }
 
 /* -----------------------
    (기존) 헤더 기본값
    ----------------------- */
 header {
-  @apply bg-slate-950 text-slate-100 border-b border-slate-800; /* [UNCHANGED] */
+  @apply bg-slate-950 text-slate-100 border-b border-slate-800;
 }
 
 header a,
 header button,
 header span {
-  @apply text-slate-100; /* [UNCHANGED] */
+  @apply text-slate-100;
 }
 
 /* =======================
@@ -40,15 +40,15 @@ header span {
 }
 
 .react-flow__controls-button {
-  @apply bg-slate-900 border border-slate-700 text-slate-100; /* [UNCHANGED] */
+  @apply bg-slate-900 border border-slate-700 text-slate-100;
 }
 
 .react-flow__controls-button:hover {
-  @apply bg-slate-800; /* [UNCHANGED] */
+  @apply bg-slate-800;
 }
 
 .react-flow__controls-button svg {
-  @apply text-slate-100; /* [UNCHANGED] */
+  @apply text-slate-100;
 }
 
 /* =======================
@@ -58,7 +58,7 @@ header span {
 .input {
   @apply w-full rounded-xl border border-slate-700 bg-slate-900
          px-3 py-2 text-slate-100 outline-none
-         focus:ring-2 focus:ring-sky-500/40; /* [UNCHANGED] */
+         focus:ring-2 focus:ring-sky-500/40;
 }
 
 /* =======================
@@ -67,17 +67,17 @@ header span {
    ======================= */
 
 /* #root 바로 아래의 첫 div (min-h-screen bg-zinc-50 였던 놈) */
-body > #root > div {        /* [ADDED] */
+body > #root > div {
   @apply min-h-screen bg-slate-950 text-slate-100;
 }
 
 /* 그 div 안의 고정 헤더 (로고 + Reports 탭이 있는 흰 헤더) */
-body > #root > div > header { /* [ADDED] */
+body > #root > div > header {
   @apply bg-slate-950/95 border-b border-slate-800 text-slate-100;
 }
 
 /* 상단 글로벌 헤더 안 링크 색상 */
-body > #root > div > header a { /* [ADDED] */
+body > #root > div > header a {
   @apply text-slate-100 hover:text-slate-50;
 }
 
@@ -85,7 +85,7 @@ body > #root > div > header a { /* [ADDED] */
    Recharts (ResponsiveContainer) Size Fix
    - 경고: width(-1) / height(-1)
    - 원인: 부모 컨테이너가 flex/grid에서 min-height/min-width가 0으로
-          계산되거나, 초기 렌더 시 높이 0인 상태에서 차트가 렌더됨
+           계산되거나, 초기 렌더 시 높이 0인 상태에서 차트가 렌더됨
    - 해결: 루트/차트 컨테이너에 "측정 가능한 최소 크기"를 보장
    ========================================================= */
 
@@ -115,4 +115,53 @@ body {
   height: 100% !important;
   min-width: 0;
   min-height: 0;
+}
+
+
+/* =========================================================
+   🛑 [WAVE PATCH] Print Layout Fix (1페이지 잘림 현상 해결)
+   ========================================================= */
+@media print {
+  /* 1. 최상위 부모들의 화면 100% 채우기 제약 완벽 해제 */
+  html,
+  body,
+  #root,
+  body > #root > div {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    /* 인쇄 시 다크 테마 배경을 제거하고 흰색 배경으로 강제 지정 */
+    background-color: white !important;
+    color: black !important;
+  }
+
+  /* 2. Tailwind의 화면 고정(스크롤 유발) 클래스들 강제 무력화 */
+  .h-screen,
+  .min-h-screen,
+  .max-h-screen,
+  .h-full {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+  }
+
+  .overflow-hidden,
+  .overflow-y-auto,
+  .overflow-auto {
+    overflow: visible !important;
+  }
+
+  /* 3. 리포트를 감싸는 절대 위치나 고정 요소 해제 */
+  .absolute,
+  .fixed,
+  .sticky {
+    position: static !important;
+  }
+
+  /* 4. 불필요한 스크롤바 영역이나 마진 제거 */
+  ::-webkit-scrollbar {
+    display: none !important;
+  }
 }

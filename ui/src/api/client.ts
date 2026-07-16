@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 // ✅ [원복] 복잡하게 IP 따라가지 말고, 그냥 무조건 로컬로 쏘게 고정합니다.
-const API_BASE_URL = 'http://127.0.0.1:8003/api/v1';
+const API_BASE_URL = 'http://127.0.0.1:8001/api/v1';
 
 export const axiosInstance = axios.create({
   baseURL: API_BASE_URL,

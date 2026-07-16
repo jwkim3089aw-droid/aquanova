@@ -1,125 +1,87 @@
 // ui/src/features/simulation/results/pdf/panels/HRROCoreStatusTable.tsx
 import React from 'react';
-import { THEME } from '../theme';
-import { Badge } from '../components';
-import { pickAnyFromKeys, pickNumber, safeObj, summarizeValue } from '../utils';
+import { fmt } from '../utils';
 import { UnitLabels } from '../types';
 
 export function HRROCoreStatusTable({
-  physics,
+  stage,
   u,
 }: {
-  physics: any;
+  stage: any;
   u: UnitLabels;
 }) {
-  const p = safeObj(physics);
+  if (!stage) return null;
 
-  const targetFlux = pickNumber(p?.target_flux_lmh);
-  const achievedFlux = pickNumber(p?.achieved_flux_lmh);
-  const pIn = pickNumber(p?.p_in_bar);
-  const pOut = pickNumber(p?.p_out_bar);
-  const dp = pickNumber(p?.dp_bar);
-  const ndp = pickNumber(p?.ndp_bar);
-  const sec = pickNumber(p?.sec_kwhm3 ?? p?.sec_kwh_m3);
-  const pumpEff = pickAnyFromKeys(p, ['pump_eff', 'pumpEff', 'eff']);
-  const pLimit = pickNumber(p?.pressure_limit_bar);
+  // 🟢 JSON 구조에 맞춘 정확한 다중 키 매핑 (엔진의 최신 물리 기호 우선 적용)
+  const targetFlux = stage.design_flux_lmh ?? stage.target_flux_lmh;
+  const achievedFlux = stage.flux_lmh ?? stage.jw_avg_lmh;
 
-  const fluxStatus = () => {
-    if (targetFlux == null || achievedFlux == null || targetFlux === 0)
-      return <Badge text="N/A" tone="slate" />;
-    const ratio = achievedFlux / targetFlux;
-    if (ratio >= 0.98 && ratio <= 1.05)
-      return <Badge text="OK" tone="emerald" />;
-    if (ratio >= 0.9 && ratio <= 1.15)
-      return <Badge text="WARN" tone="amber" />;
-    return <Badge text="OFF" tone="rose" />;
-  };
+  const pIn = stage.chemistry?.model?.p_in_bar_max ?? stage.p_in_bar;
+  const pOut = stage.p_out_bar;
+  const dp =
+    stage.chemistry?.model?.dp_total_bar ??
+    (pIn != null && pOut != null ? pIn - pOut : null);
+  const ndp = stage.ndp_bar;
 
-  const pLimitStatus = () => {
-    if (pLimit == null || pOut == null)
-      return <Badge text="N/A" tone="slate" />;
-    if (pOut <= pLimit) return <Badge text="OK" tone="emerald" />;
-    if (pOut <= pLimit * 1.02) return <Badge text="WARN" tone="amber" />;
-    return <Badge text="LIMIT" tone="rose" />;
-  };
+  const sec = stage.sec_kwhm3 ?? stage.sec_kwh_m3 ?? stage.SEC;
+  const pumpEff =
+    stage.pump_eff ??
+    stage.pump_efficiency ??
+    stage.chemistry?.physics_parameters?.pump_eff ??
+    80;
 
-  const rows = [
-    {
-      label: 'Target Flux',
-      value: targetFlux,
-      unit: u.flux,
-      status: <Badge text="REF" tone="blue" />,
-    },
-    {
-      label: 'Achieved Flux',
-      value: achievedFlux,
-      unit: u.flux,
-      status: fluxStatus(),
-    },
-    {
-      label: 'Inlet Pressure',
-      value: pIn,
-      unit: u.pressure,
-      status: <Badge text="INFO" tone="slate" />,
-    },
-    {
-      label: 'Outlet Pressure',
-      value: pOut,
-      unit: u.pressure,
-      status: pLimitStatus(),
-    },
-    {
-      label: 'Pressure Limit',
-      value: pLimit,
-      unit: u.pressure,
-      status: <Badge text="REF" tone="blue" />,
-    },
-    {
-      label: 'ΔP',
-      value: dp,
-      unit: u.pressure,
-      status: <Badge text="INFO" tone="slate" />,
-    },
-    {
-      label: 'NDP',
-      value: ndp,
-      unit: u.pressure,
-      status: <Badge text="INFO" tone="slate" />,
-    },
-    {
-      label: 'SEC',
-      value: sec,
-      unit: 'kWh/m³',
-      status: <Badge text="INFO" tone="slate" />,
-    },
-    {
-      label: 'Pump Eff.',
-      value: pumpEff,
-      unit: '',
-      status: <Badge text="INFO" tone="slate" />,
-    },
-  ].filter((r) => r.value !== undefined);
+  // 🟦 원하시던 바로 그 촘촘한 WAVE 스타일 가로형 테이블 테마!
+  const thClass =
+    'py-1.5 px-3 text-[10px] font-bold text-slate-800 border border-slate-400 bg-slate-200 text-left tracking-wider w-1/6';
+  const tdClass =
+    'py-1.5 px-3 text-[11px] font-mono font-bold text-slate-900 border border-slate-300 bg-white tabular-nums w-1/6';
 
   return (
-    <div className={THEME.TABLE_WRAP}>
-      <table className={THEME.TABLE}>
-        <thead>
-          <tr>
-            <th className={THEME.TH}>Item</th>
-            <th className={THEME.TH}>Value</th>
-            <th className={THEME.TH}>Unit</th>
-            <th className={THEME.TH}>Status</th>
-          </tr>
-        </thead>
+    <div className="w-full print:break-inside-avoid mb-6">
+      <div className="text-[12px] font-bold text-slate-800 mb-2 pl-2 border-l-2 border-slate-800 uppercase tracking-wider">
+        HRRO 스테이지 {stage.stage ?? ''} - 핵심 성능 지표 (Key Performance
+        Indicators)
+      </div>
+      <table className="w-full border-collapse border-2 border-slate-500">
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className={THEME.TR}>
-              <td className={THEME.TD_LABEL}>{r.label}</td>
-              <td className={THEME.TD}>{summarizeValue(r.value)}</td>
-              <td className={THEME.TD}>{r.unit}</td>
-              <td className={THEME.TD}>{r.status}</td>
-            </tr>
-          ))}
+          <tr>
+            <th className={thClass}>목표 플럭스 (Target Flux)</th>
+            <td className={tdClass}>
+              {fmt(targetFlux)} {u.flux}
+            </td>
+
+            <th className={thClass}>달성 플럭스 (Achieved Flux)</th>
+            {/* 핵심 지표 하이라이트 */}
+            <td className={`${tdClass} text-blue-800 bg-blue-50/50`}>
+              {fmt(achievedFlux)} {u.flux}
+            </td>
+
+            <th className={thClass}>펌프 효율 (Pump Eff.)</th>
+            <td className={tdClass}>{fmt(pumpEff)} %</td>
+          </tr>
+          <tr>
+            <th className={thClass}>최고 인가 압력 (Max Inlet Pressure)</th>
+            {/* HRRO는 인가 압력이 중요하므로 하이라이트 */}
+            <td className={`${tdClass} text-blue-800 bg-blue-50/50`}>
+              {fmt(pIn)} {u.pressure}
+            </td>
+
+            <th className={thClass}>모듈 차압 (ΔP)</th>
+            <td className={tdClass}>
+              {fmt(dp)} {u.pressure}
+            </td>
+
+            <th className={thClass}>순추진압력 (NDP)</th>
+            <td className={tdClass}>
+              {fmt(ndp)} {u.pressure}
+            </td>
+          </tr>
+          <tr>
+            <th className={thClass}>비에너지 (SEC)</th>
+            <td className={tdClass} colSpan={5}>
+              {fmt(sec)} kWh/m³
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>

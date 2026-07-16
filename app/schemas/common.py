@@ -1,6 +1,6 @@
-# app\schemas\common.py
+# app/schemas/common.py
 from enum import Enum
-from typing import Literal
+from typing import Literal, Any
 from pydantic import BaseModel, ConfigDict
 
 
@@ -41,4 +41,5 @@ class UnitsSettingsIn(AppBaseModel):
 
 class UnitsSettingsOut(UnitsSettingsIn):
     id: str
-    conversions: dict[str, float] = {}
+    # 💡 [핵심 수정] float 대신 Any를 사용하여 복잡한 변환 객체 파싱 에러(500) 원천 차단
+    conversions: dict[str, Any] = {}

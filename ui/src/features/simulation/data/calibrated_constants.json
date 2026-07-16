@@ -1,0 +1,6 @@
+// ui/src/features/simulation/data/calibrated_constants.json
+{
+  "filmtec-bw30-400": { "A_corr": 1.034, "B_corr": 0.455, "dp_bar": 0.75, "cp_adj": 0.461 },
+  "filmtec-soar-3000i": { "A_corr": 1.474, "B_corr": 8.449, "dp_bar": 0.15, "cp_adj": 0.25 },
+  ...
+}

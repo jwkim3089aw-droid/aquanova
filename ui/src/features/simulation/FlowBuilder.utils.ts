@@ -3,58 +3,36 @@ import { Node } from 'reactflow';
 import { StageConfig } from '../../api/types';
 import { UnitKind, UnitData, FlowData } from './model/types';
 
-// =========================================================
-// Default Configuration Generator
-// - Aligned with Backend Schema (Hardware & Physics Defaults)
-// =========================================================
-
 export function defaultConfig(k: UnitKind): StageConfig {
-  // 공통 기본값 정의
   const baseConfig: Partial<StageConfig> = {
     module_type: k as any,
     element_inch: 8,
-    // 🛑 [WAVE 일치화] 하드웨어 그릇 크기 동기화
-    vessel_count: 10, // Default: 10 Pressure Vessels
-    elements_per_vessel: 5, // Default: 5 Elements per Vessel
-    elements: 50, // Total = 10 * 5 = 50
-
-    // Membrane Defaults (Clean)
+    vessel_count: 10,
+    elements_per_vessel: 5,
+    elements: 50,
     membrane_area_m2: 40.9,
-    flow_factor: 0.85, // Aging Factor (Standard 3-year equivalent)
-
-    // Safety & Back Pressure
+    flow_factor: 0.85,
     permeate_back_pressure_bar: 0.0,
-    burst_pressure_limit_bar: 83.0, // approx 1200 psi
+    burst_pressure_limit_bar: 83.0,
   };
 
   if (k === 'HRRO') {
-    // HRRO: High Recovery, Closed Circuit Logic
     return {
       ...baseConfig,
       module_type: 'HRRO',
-      membrane_model: 'FilmTec SOAR 6000i',
-
-      // HRRO Performance Specs
-      membrane_A_lmh_bar: 6.35,
-      membrane_B_lmh: 0.058,
+      membrane_model: 'filmtec-soar-5000i',
+      membrane_A_lmh_bar: 5.5,
+      membrane_B_lmh: 0.06,
       membrane_salt_rejection_pct: 99.5,
-
-      // Operation Targets
-      pressure_bar: 50.0, // High pressure assumption for high recovery
-      recovery_target_pct: 90.0, // Batch Stop Recovery
-      stop_recovery_pct: 90.0, // Explicit Stop Condition
-
-      // Loop & Cycle
-      loop_volume_m3: 2.0,
-      recirc_flow_m3h: 120.0, // High crossflow
+      pressure_bar: 50.0,
+      recovery_target_pct: 90.0,
+      stop_recovery_pct: 90.0,
+      loop_volume_m3: 1.36,
+      recirc_flow_m3h: 120.0,
       max_minutes: 60.0,
       timestep_s: 5,
-      hrro_engine: 'excel_only',
-
-      // 🛑 [WAVE 일치화] 농축수 순환 기본값 추가
+      hrro_engine: 'physics', // 🔥 스모킹 건 해결: 진짜 물리화학 엔진(physics) 풀가동!!
       cc_recycle_m3h_per_pv: 4.33,
-
-      // Advanced Physics
       mass_transfer: {
         feed_channel_area_m2: 0.015,
         rho_kg_m3: 998.0,
@@ -70,17 +48,14 @@ export function defaultConfig(k: UnitKind): StageConfig {
   }
 
   if (k === 'RO') {
-    // Standard RO Logic
     return {
       ...baseConfig,
       module_type: 'RO',
-      membrane_model: 'FilmTec BW30-400',
-
+      membrane_model: 'filmtec-bw30-400',
       membrane_A_lmh_bar: 4.0,
       membrane_B_lmh: 0.5,
-
       pressure_bar: 15.0,
-      recovery_target_pct: 50.0, // Standard Single Pass Recovery
+      recovery_target_pct: 50.0,
     } as StageConfig;
   }
 
@@ -104,7 +79,6 @@ export function defaultConfig(k: UnitKind): StageConfig {
     } as StageConfig;
   }
 
-  // UF Defaults
   return {
     ...baseConfig,
     module_type: 'UF',
@@ -114,9 +88,6 @@ export function defaultConfig(k: UnitKind): StageConfig {
   } as StageConfig;
 }
 
-// ---------------------------------------------------------
-// Helper: Ensure Unit Config exists on nodes
-// ---------------------------------------------------------
 export function ensureUnitCfg(nodes: Node<FlowData>[]): Node<FlowData>[] {
   return nodes.map((n) => {
     const d: any = n.data;

@@ -1,6 +1,6 @@
 # app\services\simulation\modules\base.py
 from abc import ABC, abstractmethod
-from app.api.v1.schemas import StageConfig, FeedInput, StageMetric
+from app.schemas.simulation import StageConfig, FeedInput, StageMetric
 
 
 class SimulationModule(ABC):

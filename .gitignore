@@ -49,3 +49,10 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 Desktop.ini
+# AquaNova generated artifacts
+scripts/wave_records/results/_automation_logs/
+ui/dist/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.bak

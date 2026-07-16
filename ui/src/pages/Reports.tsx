@@ -17,6 +17,7 @@ import {
 
 import { usePdfExport } from '../features/simulation/results/pdf/usePdfExport';
 import { ReportTemplate } from '../features/simulation/results/pdf/ReportTemplate';
+import { logger } from '../utils/logger'; // ✨ Logger 추가
 
 type ViewMode = 'SYSTEM' | 'STAGE';
 
@@ -113,8 +114,9 @@ export default function Reports() {
   const [zoom, setZoom] = useState(1.0);
   const [compact, setCompact] = useState(true);
 
+  // 기본 리포트 타이틀 한국어 패치
   const [reportTitle, setReportTitle] = useState(
-    meta?.projectName || 'System Projection Report',
+    meta?.projectName || '시스템 예측 리포트 (System Projection Report)',
   );
 
   const [copyState, setCopyState] = useState<
@@ -163,7 +165,7 @@ export default function Reports() {
   useEffect(() => {
     if (!reportData || didLogRef.current) return;
     didLogRef.current = true;
-    console.log('REPORT_DATA', reportData);
+    logger.debug('REPORT_DATA', reportData); // ✨ console.log -> logger.debug로 변경
   }, [reportData]);
 
   const handleZoom = (delta: number) =>
@@ -179,7 +181,7 @@ export default function Reports() {
       setCopyState('copied');
       window.setTimeout(() => setCopyState('idle'), 900);
     } catch (e) {
-      console.error(e);
+      logger.error('클립보드 복사 실패', e); // ✨ console.error -> logger.error로 변경
       setCopyState('error');
       window.setTimeout(() => setCopyState('idle'), 900);
       alert('복사 실패. 브라우저 권한/보안 설정을 확인하세요.');
@@ -300,21 +302,25 @@ export default function Reports() {
     };
   }, [scenarioId, receivedDataFromState, meta?.projectName]);
 
+  // 에러 화면 한국어 패치
   if (!reportData && !scenarioId) {
     return (
       <div className="flex h-screen items-center justify-center bg-zinc-100 flex-col gap-4">
         <AlertCircle className="w-12 h-12 text-zinc-400" />
-        <p className="text-zinc-600 font-medium">No report data found.</p>
+        <p className="text-zinc-600 font-medium">
+          리포트 데이터를 찾을 수 없습니다.
+        </p>
         <button
           onClick={() => navigate('/')}
           className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-bold"
         >
-          Go to Simulation
+          시뮬레이션으로 이동
         </button>
       </div>
     );
   }
 
+  // 로딩 화면 한국어 패치
   if (!reportData && scenarioId) {
     return (
       <div className="flex h-screen items-center justify-center bg-zinc-100 flex-col gap-4 px-6">
@@ -323,16 +329,16 @@ export default function Reports() {
         </div>
 
         <div className="text-center max-w-xl">
-          <p className="text-slate-800 font-bold text-lg">Detailed Report</p>
+          <p className="text-slate-800 font-bold text-lg">상세 리포트</p>
           <p className="text-slate-600 text-sm mt-2 leading-relaxed">
             scenario_id로 리포트 데이터를 불러오는 중입니다.
           </p>
           <div className="mt-2 text-xs text-slate-500">
-            scenario_id: <span className="font-mono">{scenarioId}</span>
+            시나리오 ID: <span className="font-mono">{scenarioId}</span>
           </div>
 
           {isLoading ? (
-            <div className="mt-4 text-sm text-slate-600">Loading...</div>
+            <div className="mt-4 text-sm text-slate-600">불러오는 중...</div>
           ) : null}
 
           {loadError ? (
@@ -345,7 +351,7 @@ export default function Reports() {
             onClick={() => navigate(-1)}
             className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded hover:bg-slate-50 text-sm font-bold"
           >
-            Back
+            뒤로 가기
           </button>
 
           <button
@@ -354,14 +360,14 @@ export default function Reports() {
             disabled={isLoading}
           >
             <RefreshCcw className="w-4 h-4" />
-            Retry
+            재시도
           </button>
 
           <button
             onClick={() => navigate('/')}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-bold"
           >
-            Go to Simulation
+            시뮬레이션으로 이동
           </button>
         </div>
       </div>
@@ -373,7 +379,6 @@ export default function Reports() {
 
   return (
     <div className="flex h-screen bg-[#525659] font-sans text-slate-900 overflow-hidden print:bg-white print:h-auto print:overflow-visible">
-      {/* ✅ 추가/수정: Print 최적화 CSS */}
       <style>{`
         #report-viewer-content.compact pre {
           max-height: 220px;
@@ -405,7 +410,7 @@ export default function Reports() {
           border: 1px solid rgba(15, 23, 42, 0.12);
         }
 
-        /* ✅ 핵심: 인쇄 전용 CSS (Zoom 무시, 배경색 강제, 여백 제어) */
+        /* ✅ 인쇄 전용 CSS (Zoom 무시, 배경색 강제, 여백 제어) */
         @media print {
           @page {
             size: A4 portrait;
@@ -442,40 +447,40 @@ export default function Reports() {
         }
       `}</style>
 
-      {/* LEFT SIDEBAR */}
+      {/* LEFT SIDEBAR (사이드바 한국어 패치) */}
       <div className="w-64 bg-white border-r border-slate-300 flex flex-col z-20 print:hidden shadow-xl">
         <div className="h-14 flex items-center px-4 border-b border-slate-200 bg-slate-50 gap-2">
           <button
             onClick={() => navigate(-1)}
             className="p-1 hover:bg-slate-200 rounded text-slate-500"
-            title="Back"
+            title="뒤로 가기"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
           <span className="font-bold text-slate-700 text-sm">
-            Back to Builder
+            빌더로 돌아가기
           </span>
         </div>
 
         <div className="p-4">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-            Structure
+            문서 구조
           </div>
           <div className="space-y-1">
             <button className="w-full text-left px-3 py-2 rounded bg-blue-50 text-blue-700 text-xs font-bold border border-blue-100">
-              1. Main Report
+              1. 메인 리포트
             </button>
           </div>
           <div className="mt-4 text-[11px] text-slate-500 leading-relaxed">
             • PDF는 화면 렌더링 기반으로 생성됩니다.
-            <br />• Copy는 리포트의 <b>텍스트</b>만 복사합니다(차트 제외).
+            <br />• 복사(Copy)는 리포트의 <b>텍스트</b>만 가져옵니다(차트 제외).
           </div>
         </div>
       </div>
 
       {/* MAIN CONTENT */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* TOP TOOLBAR */}
+        {/* TOP TOOLBAR (상단 툴바 한국어 패치) */}
         <div className="h-14 bg-white border-b border-zinc-300 px-6 flex items-center justify-between shadow-sm z-10 print:hidden">
           <div className="flex items-center gap-3">
             <input
@@ -485,20 +490,20 @@ export default function Reports() {
             />
             <div className="hidden md:flex items-center gap-2 text-xs text-slate-500">
               {scenarioId ? (
-                <span className="font-mono">scenario_id: {scenarioId}</span>
+                <span className="font-mono">시나리오 ID: {scenarioId}</span>
               ) : null}
             </div>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="flex items-center bg-zinc-100 rounded p-1">
-              <button onClick={() => handleZoom(-0.1)} title="Zoom out">
+              <button onClick={() => handleZoom(-0.1)} title="축소">
                 <ZoomOut className="w-4 h-4 text-zinc-600 mx-2" />
               </button>
               <span className="text-xs font-mono w-10 text-center">
                 {Math.round(zoom * 100)}%
               </span>
-              <button onClick={() => handleZoom(0.1)} title="Zoom in">
+              <button onClick={() => handleZoom(0.1)} title="확대">
                 <ZoomIn className="w-4 h-4 text-zinc-600 mx-2" />
               </button>
             </div>
@@ -511,10 +516,10 @@ export default function Reports() {
                     ? 'bg-slate-900 text-white border-slate-900 hover:bg-black'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
                 }`}
-              title="Compact mode (RAW debug blocks collapsed)"
+              title="컴팩트 모드 (RAW 데이터 숨김)"
             >
               <LayoutList className="w-4 h-4" />
-              {compact ? 'Compact' : 'Full'}
+              {compact ? '요약 모드' : '전체 모드'}
             </button>
 
             <button
@@ -527,7 +532,7 @@ export default function Reports() {
                       ? 'bg-slate-100 text-slate-700 border-slate-200'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
                 }`}
-              title="Copy report text"
+              title="리포트 텍스트 복사"
             >
               {copyState === 'copied' ? (
                 <CheckCircle2 className="w-4 h-4" />
@@ -535,18 +540,18 @@ export default function Reports() {
                 <ClipboardCopy className="w-4 h-4" />
               )}
               {copyState === 'copied'
-                ? 'Copied'
+                ? '복사 완료'
                 : copyState === 'copying'
-                  ? 'Copying...'
-                  : 'Copy'}
+                  ? '복사 중...'
+                  : '텍스트 복사'}
             </button>
 
             <button
               onClick={() => window.print()}
               className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 rounded border border-transparent hover:border-slate-300 transition-all"
-              title="Print"
+              title="인쇄"
             >
-              <Printer className="w-4 h-4" /> Print
+              <Printer className="w-4 h-4" /> 인쇄
             </button>
 
             <button
@@ -555,9 +560,9 @@ export default function Reports() {
               }
               disabled={isExporting}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded shadow-md transition-all active:scale-95 disabled:opacity-50"
-              title="Download PDF"
+              title="PDF 다운로드"
             >
-              {isExporting ? 'Generating...' : 'Download PDF'}
+              {isExporting ? '생성 중...' : 'PDF 다운로드'}
               <Download className="w-4 h-4" />
             </button>
           </div>

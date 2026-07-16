@@ -1,7 +1,6 @@
 // ui/src/components/common/ReportDownloadButton.tsx
 import React, { useCallback, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FileDown, ArrowRight, AlertCircle } from 'lucide-react';
+import { FileDown, Loader2, AlertCircle } from 'lucide-react';
 
 interface ReportDownloadButtonProps {
   scenarioId: string;
@@ -10,7 +9,7 @@ interface ReportDownloadButtonProps {
   outUnits?: 'display' | 'metric';
 }
 
-type UIStatus = 'idle' | 'warn' | 'error';
+type UIStatus = 'idle' | 'loading' | 'error' | 'success';
 
 export const ReportDownloadButton: React.FC<ReportDownloadButtonProps> = ({
   scenarioId,
@@ -18,100 +17,132 @@ export const ReportDownloadButton: React.FC<ReportDownloadButtonProps> = ({
   className = '',
   outUnits = 'display',
 }) => {
-  const navigate = useNavigate();
-
-  // deprecated 안내를 위한 간단 상태
   const [status, setStatus] = useState<UIStatus>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const isDisabled = useMemo(
-    () => disabled || !scenarioId,
-    [disabled, scenarioId],
+    () => disabled || !scenarioId || status === 'loading',
+    [disabled, scenarioId, status],
   );
 
-  const handleClick = useCallback(() => {
+  const handleDownload = useCallback(async () => {
+    if (!scenarioId) return;
+
     try {
+      setStatus('loading');
       setErrorMessage(null);
 
-      if (!scenarioId) {
-        setStatus('error');
-        setErrorMessage('scenarioId가 없습니다. 먼저 시뮬레이션을 실행하세요.');
-        return;
+      // 1. 워커에 리포트 생성 작업(Job) 큐 등록
+      const enqueueRes = await fetch(
+        `/api/v1/reports/enqueue?out_units=${outUnits}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenario_id: scenarioId }),
+        },
+      );
+
+      if (!enqueueRes.ok) {
+        const errorData = await enqueueRes.json().catch(() => ({}));
+        throw new Error(
+          errorData.detail || 'Failed to start report generation',
+        );
       }
 
-      // 서버 PDF는 비활성(보류) → UI Detailed Report로 유도
-      setStatus('warn');
+      const { job_id } = await enqueueRes.json();
 
-      navigate('/reports', {
-        state: {
-          // Reports.tsx가 state.data를 받으면 즉시 렌더링,
-          // data가 없으면 scenario 기반으로 로딩/안내하도록 유도
-          data: null,
-          mode: 'SYSTEM',
-          meta: {
-            scenario_id: scenarioId,
-            out_units: outUnits,
-            opened_by: 'ReportDownloadButton(deprecated)',
-            message:
-              "Server PDF is disabled. Use 'Detailed Report' and client-side PDF export.",
-            opened_at: new Date().toISOString(),
-          },
-        },
-      });
-    } catch (e: any) {
+      // 2. 작업이 완료될 때까지 Polling (2초 간격)
+      let isReady = false;
+      while (!isReady) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        const statusRes = await fetch(`/api/v1/reports/${job_id}`);
+        if (!statusRes.ok) throw new Error('Failed to check report status');
+
+        const statusData = await statusRes.json();
+
+        if (statusData.status === 'succeeded') {
+          isReady = true;
+        } else if (statusData.status === 'failed') {
+          throw new Error(
+            statusData.error_message || 'Report generation failed in worker',
+          );
+        }
+      }
+
+      // 3. 완료된 PDF 다운로드 처리 (Blob)
+      const downloadRes = await fetch(`/api/v1/reports/${job_id}/download`);
+      if (!downloadRes.ok) throw new Error('Failed to download PDF');
+
+      const blob = await downloadRes.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `AquaNova_Report_${scenarioId.slice(0, 8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+
+      setStatus('success');
+
+      // 3초 후 버튼 상태 초기화
+      setTimeout(() => setStatus('idle'), 3000);
+    } catch (err: any) {
+      console.error('Report Generation Error:', err);
       setStatus('error');
-      setErrorMessage(e?.message || 'Failed to open Detailed Report');
+      setErrorMessage(err.message || 'An unexpected error occurred.');
     }
-  }, [navigate, outUnits, scenarioId]);
-
-  // 버튼 문구/스타일: “서버 PDF” 대신 “Detailed Report로 이동”
-  const label = useMemo(() => {
-    if (status === 'error') return 'Open Detailed Report';
-    if (status === 'warn') return 'Opening Detailed Report...';
-    return 'Detailed Report';
-  }, [status]);
+  }, [scenarioId, outUnits]);
 
   return (
     <div className="flex flex-col items-end">
       <button
-        onClick={handleClick}
+        onClick={handleDownload}
         disabled={isDisabled}
         className={`
-          flex items-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-colors
-          ${
-            status === 'error'
-              ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
-              : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 shadow-sm'
-          }
-          ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
+          flex items-center justify-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-all
+          min-w-[160px] shadow-sm
+          ${status === 'error' ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100' : ''}
+          ${status === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : ''}
+          ${status === 'idle' ? 'bg-[#0F4C81] text-white border border-transparent hover:bg-blue-900' : ''}
+          ${status === 'loading' ? 'bg-slate-100 text-slate-500 border border-slate-300 cursor-wait' : ''}
+          ${isDisabled && status !== 'loading' ? 'opacity-50 cursor-not-allowed' : ''}
           ${className}
         `}
-        title="Server-side PDF is disabled. Open Detailed Report and export PDF in the browser."
       >
-        {status === 'error' ? (
+        {status === 'loading' && (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Generating...</span>
+          </>
+        )}
+        {status === 'success' && (
+          <>
+            <FileDown className="w-4 h-4" />
+            <span>Downloaded!</span>
+          </>
+        )}
+        {status === 'error' && (
           <>
             <AlertCircle className="w-4 h-4" />
-            <span>{label}</span>
+            <span>Failed</span>
           </>
-        ) : (
+        )}
+        {status === 'idle' && (
           <>
-            {/* 기존 Download 느낌 유지: FileDown + 이동 아이콘 */}
             <FileDown className="w-4 h-4" />
-            <span>{label}</span>
-            <ArrowRight className="w-4 h-4 opacity-60" />
+            <span>Download Report</span>
           </>
         )}
       </button>
 
-      {/* deprecated 안내: 한 번이라도 클릭하면 경고 문구 표시 */}
-      {status === 'warn' && (
-        <span className="text-[11px] text-amber-600 mt-1">
-          Server PDF is disabled. Export PDF inside Detailed Report.
-        </span>
-      )}
-
+      {/* 에러 메시지 표시 */}
       {status === 'error' && errorMessage && (
-        <span className="text-xs text-red-500 mt-1">{errorMessage}</span>
+        <span className="text-xs text-red-500 mt-2 max-w-xs text-right break-words">
+          {errorMessage}
+        </span>
       )}
     </div>
   );

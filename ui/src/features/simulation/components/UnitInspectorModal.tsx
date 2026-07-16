@@ -1,3 +1,4 @@
+// ui/src/features/simulation/components/UnitInspectorModal.tsx
 import React, { useEffect, useState } from 'react';
 import type { Node } from 'reactflow';
 

@@ -1,6 +1,5 @@
 // ui/src/features/simulation/editors/UnitForms/ROEditor.tsx
-
-import React from 'react';
+import React, { memo } from 'react';
 import { Field, Input } from '../../components/Common';
 import MembraneSelect from '../../components/MembraneSelect';
 import { UnitData, ROConfig } from '../../model/types';
@@ -13,7 +12,8 @@ import {
 } from './utils';
 import { PumpSection } from './PumpSection';
 
-export function ROEditor({
+// 폼 컴포넌트 리렌더링 방지를 위한 memo 적용
+export const ROEditor = memo(function ROEditor({
   node,
   feed,
   onChange,
@@ -23,7 +23,11 @@ export function ROEditor({
   onChange: (cfg: ROConfig) => void;
 }) {
   if (!node || (node.kind !== 'RO' && node.kind !== 'NF'))
-    return <div className="text-red-400 text-xs p-4">Invalid Data</div>;
+    return (
+      <div className="text-red-400 text-xs p-4">
+        유효하지 않은 데이터입니다. (Invalid Data)
+      </div>
+    );
 
   const cfg = {
     mode: 'recovery' as const,
@@ -77,10 +81,11 @@ export function ROEditor({
       className="flex flex-col h-full text-slate-100 p-1 overflow-hidden"
       onKeyDown={(e) => e.stopPropagation()}
     >
+      {/* 상단 요약 대시보드 (KPI) */}
       <div className="grid grid-cols-4 gap-2 p-2 bg-slate-900 border border-slate-700 rounded-lg shadow-inner shrink-0 mb-2">
         <div className="flex flex-col items-center border-r border-slate-700">
-          <span className="text-[10px] text-slate-400 font-bold mb-0.5">
-            유입 유량 (Feed)
+          <span className="text-[10px] text-slate-400 font-bold mb-0.5 uppercase tracking-wide">
+            유입수 (Feed Flow)
           </span>
           <span className="font-mono text-base font-bold text-slate-100">
             {feedFlow.toFixed(1)}{' '}
@@ -90,7 +95,7 @@ export function ROEditor({
           </span>
         </div>
         <div className="flex flex-col items-center border-r border-slate-700">
-          <span className="text-[10px] text-emerald-400 font-bold mb-0.5">
+          <span className="text-[10px] text-emerald-400 font-bold mb-0.5 uppercase tracking-wide">
             회수율 (Recovery)
           </span>
           <span className="font-mono text-base font-bold text-emerald-400">
@@ -101,8 +106,8 @@ export function ROEditor({
           </span>
         </div>
         <div className="flex flex-col items-center border-r border-slate-700">
-          <span className="text-[10px] text-blue-400 font-bold mb-0.5">
-            생산 유량 (Permeate)
+          <span className="text-[10px] text-blue-400 font-bold mb-0.5 uppercase tracking-wide">
+            생산수 (Permeate)
           </span>
           <span className="font-mono text-base font-bold text-blue-300">
             {permeateFlow.toFixed(1)}{' '}
@@ -112,8 +117,8 @@ export function ROEditor({
           </span>
         </div>
         <div className="flex flex-col items-center">
-          <span className="text-[10px] text-amber-400 font-bold mb-0.5">
-            평균 플럭스 (Flux)
+          <span className="text-[10px] text-amber-400 font-bold mb-0.5 uppercase tracking-wide">
+            평균 플럭스 (Avg Flux)
           </span>
           <span className="font-mono text-base font-bold text-amber-300">
             {flux.toFixed(1)}{' '}
@@ -125,12 +130,13 @@ export function ROEditor({
       </div>
 
       <div className="flex-1 grid grid-cols-12 gap-3 overflow-hidden">
-        <div className="col-span-6 flex flex-col gap-2 h-full min-h-0 overflow-y-auto custom-scrollbar pr-1">
+        {/* 좌측 패널 */}
+        <div className="col-span-6 flex flex-col gap-2 h-full min-h-0 overflow-y-auto custom-scrollbar pr-1 pb-4">
           <div className="shrink-0">
-            <div className="px-2 py-1.5 bg-slate-800/90 border border-slate-700 rounded-t-md text-[10px] font-bold text-slate-200">
-              Membrane Type ({node.kind})
+            <div className="px-3 py-2 bg-slate-800/90 border border-slate-700 rounded-t-md text-[11px] font-bold text-slate-200 tracking-wide">
+              멤브레인 모델 (Membrane Type: {node.kind})
             </div>
-            <div className="p-2 border-x border-b border-slate-700 bg-slate-900/60 rounded-b-md">
+            <div className="p-3 border-x border-b border-slate-700 bg-slate-900/60 rounded-b-md">
               <MembraneSelect
                 unitType={node.kind as 'RO' | 'NF'}
                 mode={cfg.membrane_mode}
@@ -148,9 +154,9 @@ export function ROEditor({
           </div>
 
           <div className={`${GROUP_CLS} shrink-0 !mb-0`}>
-            <h4 className={HEADER_CLS}>📏 모듈 배열 (Array Configuration)</h4>
+            <h4 className={HEADER_CLS}>모듈 배열 (Array Configuration)</h4>
             <div className="grid grid-cols-3 gap-2">
-              <Field label="PV (베셀 수)">
+              <Field label="베셀 수 (Vessels)">
                 <Input
                   className={INPUT_CLS}
                   type="number"
@@ -161,7 +167,7 @@ export function ROEditor({
                   }
                 />
               </Field>
-              <Field label="수량 / PV">
+              <Field label="베셀당 엘리먼트">
                 <Input
                   className={INPUT_CLS}
                   type="number"
@@ -176,11 +182,14 @@ export function ROEditor({
                   }
                 />
               </Field>
-              <Field label="총 모듈 수">
+              <Field label="총 엘리먼트 (Total)">
                 <div
                   className={`${READONLY_CLS} text-slate-300 w-full justify-center bg-slate-800/50`}
                 >
-                  {cfg.elements} EA
+                  {cfg.elements}{' '}
+                  <span className="text-[10px] text-slate-500 ml-1">
+                    개(EA)
+                  </span>
                 </div>
               </Field>
             </div>
@@ -190,26 +199,30 @@ export function ROEditor({
             className={`${GROUP_CLS} shrink-0 !mb-0 border-blue-900/40 bg-blue-900/10`}
           >
             <h4 className={`${HEADER_CLS} border-blue-900/30 text-blue-400`}>
-              🎯 운전 제어 목표 (Operating Target)
+              운전 제어 목표 (Operating Target)
             </h4>
             <div className="flex flex-col gap-2">
-              <Field label="제어 기준">
+              <Field label="제어 기준 (Control Mode)">
                 <select
                   className={`${INPUT_CLS} border-blue-800/50 bg-blue-950/40 font-bold text-blue-200`}
                   value={cfg.mode}
                   onChange={(e) => patch({ mode: e.target.value as any })}
                 >
                   <option value="recovery">
-                    Target Recovery (회수율 고정)
+                    목표 회수율 제어 (Target Recovery)
                   </option>
-                  <option value="flow">Target Permeate Flow (유량 고정)</option>
-                  <option value="pressure">Feed Pressure (압력 고정)</option>
+                  <option value="flow">
+                    목표 생산 유량 제어 (Target Flow)
+                  </option>
+                  <option value="pressure">
+                    고정 유입 압력 제어 (Fixed Feed Pressure)
+                  </option>
                 </select>
               </Field>
 
               <div className="mt-1">
                 {cfg.mode === 'recovery' && (
-                  <Field label="목표 회수율 (%)">
+                  <Field label="목표 회수율 (Target Recovery, %)">
                     <Input
                       className={`${INPUT_CLS} font-bold text-blue-300`}
                       type="number"
@@ -222,7 +235,7 @@ export function ROEditor({
                   </Field>
                 )}
                 {cfg.mode === 'flow' && (
-                  <Field label="목표 생산 유량 (m³/h)">
+                  <Field label="목표 생산 유량 (Target Flow, m³/h)">
                     <Input
                       className={`${INPUT_CLS} font-bold text-blue-300`}
                       type="number"
@@ -234,7 +247,7 @@ export function ROEditor({
                   </Field>
                 )}
                 {cfg.mode === 'pressure' && (
-                  <Field label="고정 유입 압력 (bar)">
+                  <Field label="고정 유입 압력 (Feed Pressure, bar)">
                     <Input
                       className={`${INPUT_CLS} font-bold text-amber-300`}
                       type="number"
@@ -250,17 +263,18 @@ export function ROEditor({
           </div>
         </div>
 
-        <div className="col-span-6 flex flex-col gap-2 h-full min-h-0 overflow-y-auto custom-scrollbar pr-1">
+        {/* 우측 패널 */}
+        <div className="col-span-6 flex flex-col gap-2 h-full min-h-0 overflow-y-auto custom-scrollbar pr-1 pb-4">
           <PumpSection cfg={cfg} onChange={patch} defaultPressure={15.0} />
 
           <div
             className={`${GROUP_CLS} shrink-0 !mb-0 border-amber-900/30 bg-amber-900/5`}
           >
             <h4 className={`${HEADER_CLS} border-amber-900/20 text-amber-500`}>
-              ⏳ 노후화 및 오염 계수 (Ageing & Fouling)
+              노후화 및 오염 계수 (Ageing & Fouling)
             </h4>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="운전 년수 (Age)">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+              <Field label="막 사용 연수 (Membrane Age)">
                 <div className="flex items-center gap-1.5">
                   <Input
                     className={INPUT_CLS}
@@ -271,12 +285,12 @@ export function ROEditor({
                       patch({ age_years: Number(e.target.value) })
                     }
                   />
-                  <span className="text-[9px] text-slate-500 w-6">Yrs</span>
+                  <span className="text-[9px] text-slate-500 w-8">년(Yrs)</span>
                 </div>
               </Field>
               <div className="hidden" />
 
-              <Field label="유량 계수 (Flow Factor)">
+              <Field label="유량 감소 계수 (Flow Factor)">
                 <Input
                   className={INPUT_CLS}
                   type="number"
@@ -300,9 +314,9 @@ export function ROEditor({
           </div>
 
           <div className={`${GROUP_CLS} shrink-0 !mb-0`}>
-            <h4 className={HEADER_CLS}>💧 수리학적 압력 (Hydraulics)</h4>
+            <h4 className={HEADER_CLS}>수리학적 압력 (Hydraulics)</h4>
             <div className="flex flex-col gap-2">
-              <Field label="생산수 배압 (Permeate Pressure)">
+              <Field label="생산수 배압 (Permeate Back Pressure)">
                 <div className="flex items-center gap-1.5">
                   <Input
                     className={INPUT_CLS}
@@ -339,10 +353,10 @@ export function ROEditor({
             className={`${GROUP_CLS} shrink-0 !mb-0 border-blue-900/30 bg-blue-900/5`}
           >
             <h4 className={`${HEADER_CLS} border-blue-900/20 text-blue-400`}>
-              🌊 유량 상세 (Flow Routing)
+              유량 제어 (Flow Routing)
             </h4>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="농축수 순환 (Recycle)">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="농축수 순환 (Brine Recycle)">
                 <div className="flex items-center gap-1.5">
                   <Input
                     className={INPUT_CLS}
@@ -356,7 +370,7 @@ export function ROEditor({
                   <span className="text-[9px] text-slate-500 w-6">m³/h</span>
                 </div>
               </Field>
-              <Field label="바이패스 (Bypass)">
+              <Field label="바이패스 유량 (Bypass Flow)">
                 <div className="flex items-center gap-1.5">
                   <Input
                     className={INPUT_CLS}
@@ -376,4 +390,4 @@ export function ROEditor({
       </div>
     </div>
   );
-}
+});

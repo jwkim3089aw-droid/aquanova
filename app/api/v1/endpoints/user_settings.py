@@ -10,7 +10,7 @@ from sqlalchemy import inspect  # [ADDED]
 from app.db.session import get_db, engine
 from app.db.models.user_settings import UserSettings
 from ..schemas import UnitsSettingsIn, UnitsSettingsOut
-from app.services.units import Units, compute_conversions
+from app.utils.units import Units, compute_conversions
 
 router = APIRouter(prefix="/user-settings", tags=["user-settings"])
 

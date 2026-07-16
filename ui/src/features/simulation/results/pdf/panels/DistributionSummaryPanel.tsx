@@ -1,31 +1,34 @@
 // ui/src/features/simulation/results/pdf/panels/DistributionSummaryPanel.tsx
 import React from 'react';
-import { THEME } from '../theme';
-import { Badge } from '../components';
 import { fmt, pickNumber } from '../utils';
 import { UnitLabels } from '../types';
 
 export function DistributionSummaryPanel({
-  stages,
+  stages = [],
   u,
 }: {
-  stages: any[];
+  stages?: any[];
   u: UnitLabels;
 }) {
-  if (!stages.length) {
-    return <div className="text-[10px] text-slate-500">No stage data.</div>;
+  if (!stages || !Array.isArray(stages) || stages.length === 0) {
+    return (
+      <div className="text-[10px] text-slate-500">No stage data available.</div>
+    );
   }
 
-  const vals = stages.map((s) => ({
-    flux: pickNumber(s?.flux_lmh ?? s?.jw_avg_lmh),
-    ndp: pickNumber(s?.ndp_bar),
-    dp: pickNumber(s?.dp_bar),
-    sec: pickNumber(s?.sec_kwhm3 ?? s?.sec_kwh_m3),
-  }));
+  // 🟢 데이터 추출 (MF/UF/NF/RO 혼합 데이터 안전 대응)
+  const vals = stages.map((s) => {
+    const flux = pickNumber(s?.flux_lmh ?? s?.jw_avg_lmh);
+    const ndp = pickNumber(s?.ndp_bar);
+    const dp = pickNumber(s?.dp_bar ?? s?.chemistry?.model?.dp_total_bar);
+    const sec = pickNumber(s?.sec_kwhm3 ?? s?.sec_kwh_m3);
+    return { flux, ndp, dp, sec, stageIdx: s?.stage };
+  });
 
+  // 통계 계산 헬퍼
   const stat = (arr: Array<number | null>) => {
     const v = arr.filter((x): x is number => x != null && Number.isFinite(x));
-    if (!v.length) return null;
+    if (v.length === 0) return null;
     const min = Math.min(...v);
     const max = Math.max(...v);
     const avg = v.reduce((a, b) => a + b, 0) / v.length;
@@ -37,73 +40,92 @@ export function DistributionSummaryPanel({
   const sDp = stat(vals.map((v) => v.dp));
   const sSec = stat(vals.map((v) => v.sec));
 
-  const worstDpIdx =
-    vals
-      .map((v, i) => ({ i, dp: v.dp }))
-      .filter((x) => x.dp != null)
-      .sort((a, b) => (b.dp as number) - (a.dp as number))[0]?.i ?? null;
+  // Worst DP 스테이지 찾기
+  const validDps = vals.filter((v) => v.dp != null);
+  let worstStageLabel = 'N/A';
+  if (validDps.length > 0) {
+    const worst = validDps.reduce((prev, curr) =>
+      (curr.dp as number) > (prev.dp as number) ? curr : prev,
+    );
+    worstStageLabel = `Stage ${worst.stageIdx ?? 'Unknown'}`;
+  }
+
+  // 🟦 촘촘한 WAVE 테마 CSS 클래스
+  const thHeaderClass =
+    'py-1.5 px-3 text-[10px] font-bold text-slate-800 border border-slate-400 bg-slate-200 text-center tracking-wider';
+  const thLabelClass =
+    'py-1.5 px-3 text-[11px] font-bold text-slate-800 border border-slate-400 bg-slate-100 text-center';
+  const tdClass =
+    'py-1.5 px-3 text-[11px] font-mono font-bold text-slate-900 border border-slate-300 bg-white tabular-nums text-center';
+  const tdAvgClass =
+    'py-1.5 px-3 text-[11px] font-mono font-bold text-blue-900 border border-slate-300 bg-blue-50/40 tabular-nums text-center'; // 평균값 강조
+  const tdUnitClass =
+    'py-1.5 px-3 text-[10px] font-bold text-slate-600 border border-slate-300 bg-slate-50 text-center';
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <Badge text="MIN/AVG/MAX" tone="blue" />
-        {worstDpIdx != null ? (
-          <Badge
-            text={`Worst ΔP: Stage ${stages[worstDpIdx]?.stage ?? worstDpIdx + 1}`}
-            tone="amber"
-          />
-        ) : (
-          <Badge text="Worst ΔP: N/A" tone="slate" />
-        )}
+    <div className="w-full print:break-inside-avoid mb-6">
+      {/* 헤더 영역 */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[12px] font-bold text-slate-800 pl-2 border-l-2 border-slate-800 uppercase tracking-wider">
+          전체 시스템 분포 요약 (Distribution Summary)
+        </div>
+        <div className="flex gap-2">
+          <span className="text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded border border-slate-300">
+            MIN / AVG / MAX
+          </span>
+          <span
+            className={`text-[10px] font-bold px-2 py-0.5 rounded border ${worstStageLabel !== 'N/A' ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-slate-100 text-slate-600 border-slate-300'}`}
+          >
+            Worst ΔP: {worstStageLabel}
+          </span>
+        </div>
       </div>
 
-      <div className={THEME.TABLE_WRAP}>
-        <table className={THEME.TABLE}>
-          <thead>
-            <tr>
-              <th className={THEME.TH}>Metric</th>
-              <th className={THEME.TH}>Min</th>
-              <th className={THEME.TH}>Avg</th>
-              <th className={THEME.TH}>Max</th>
-              <th className={THEME.TH}>Unit</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className={THEME.TR}>
-              <td className={THEME.TD_LABEL}>Flux</td>
-              <td className={THEME.TD}>{sFlux ? fmt(sFlux.min) : '-'}</td>
-              <td className={THEME.TD}>{sFlux ? fmt(sFlux.avg) : '-'}</td>
-              <td className={THEME.TD}>{sFlux ? fmt(sFlux.max) : '-'}</td>
-              <td className={THEME.TD}>{u.flux}</td>
-            </tr>
-            <tr className={THEME.TR}>
-              <td className={THEME.TD_LABEL}>NDP</td>
-              <td className={THEME.TD}>{sNdp ? fmt(sNdp.min) : '-'}</td>
-              <td className={THEME.TD}>{sNdp ? fmt(sNdp.avg) : '-'}</td>
-              <td className={THEME.TD}>{sNdp ? fmt(sNdp.max) : '-'}</td>
-              <td className={THEME.TD}>{u.pressure}</td>
-            </tr>
-            <tr className={THEME.TR}>
-              <td className={THEME.TD_LABEL}>ΔP</td>
-              <td className={THEME.TD}>{sDp ? fmt(sDp.min) : '-'}</td>
-              <td className={THEME.TD}>{sDp ? fmt(sDp.avg) : '-'}</td>
-              <td className={THEME.TD}>{sDp ? fmt(sDp.max) : '-'}</td>
-              <td className={THEME.TD}>{u.pressure}</td>
-            </tr>
-            <tr className={THEME.TR}>
-              <td className={THEME.TD_LABEL}>SEC</td>
-              <td className={THEME.TD}>{sSec ? fmt(sSec.min) : '-'}</td>
-              <td className={THEME.TD}>{sSec ? fmt(sSec.avg) : '-'}</td>
-              <td className={THEME.TD}>{sSec ? fmt(sSec.max) : '-'}</td>
-              <td className={THEME.TD}>kWh/m³</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      {/* 테이블 영역 */}
+      <table className="w-full border-collapse border-2 border-slate-500">
+        <thead>
+          <tr>
+            <th className={thHeaderClass}>측정 항목 (Metric)</th>
+            <th className={thHeaderClass}>최소값 (Min)</th>
+            <th className={thHeaderClass}>평균값 (Avg)</th>
+            <th className={thHeaderClass}>최대값 (Max)</th>
+            <th className={thHeaderClass}>단위 (Unit)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th className={thLabelClass}>운전 플럭스 (Flux)</th>
+            <td className={tdClass}>{sFlux ? fmt(sFlux.min) : '-'}</td>
+            <td className={tdAvgClass}>{sFlux ? fmt(sFlux.avg) : '-'}</td>
+            <td className={tdClass}>{sFlux ? fmt(sFlux.max) : '-'}</td>
+            <td className={tdUnitClass}>{u.flux || 'LMH'}</td>
+          </tr>
+          <tr>
+            <th className={thLabelClass}>순추진압력 (NDP)</th>
+            <td className={tdClass}>{sNdp ? fmt(sNdp.min) : '-'}</td>
+            <td className={tdAvgClass}>{sNdp ? fmt(sNdp.avg) : '-'}</td>
+            <td className={tdClass}>{sNdp ? fmt(sNdp.max) : '-'}</td>
+            <td className={tdUnitClass}>{u.pressure || 'bar'}</td>
+          </tr>
+          <tr>
+            <th className={thLabelClass}>모듈 차압 (ΔP)</th>
+            <td className={tdClass}>{sDp ? fmt(sDp.min) : '-'}</td>
+            <td className={tdAvgClass}>{sDp ? fmt(sDp.avg) : '-'}</td>
+            <td className={tdClass}>{sDp ? fmt(sDp.max) : '-'}</td>
+            <td className={tdUnitClass}>{u.pressure || 'bar'}</td>
+          </tr>
+          <tr>
+            <th className={thLabelClass}>비에너지소비량 (SEC)</th>
+            <td className={tdClass}>{sSec ? fmt(sSec.min) : '-'}</td>
+            <td className={tdAvgClass}>{sSec ? fmt(sSec.avg) : '-'}</td>
+            <td className={tdClass}>{sSec ? fmt(sSec.max) : '-'}</td>
+            <td className={tdUnitClass}>kWh/m³</td>
+          </tr>
+        </tbody>
+      </table>
 
-      <div className="text-[10px] text-slate-500">
-        * Wave Detailed 리포트의 “stage/element 분포 감”을 Stage 요약 값으로
-        재구성한 패널입니다.
+      <div className="text-[10px] text-slate-500 mt-1.5 text-right">
+        * 평균값(Avg)은 전체 시스템 운영의 기준 성능 지표로 활용됩니다.
       </div>
     </div>
   );

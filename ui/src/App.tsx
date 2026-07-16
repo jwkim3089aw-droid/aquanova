@@ -6,9 +6,11 @@ import Header from './components/layout/Header';
 import FlowBuilderScreen from './features/simulation/FlowBuilderScreen';
 import Reports from './pages/Reports';
 
+import WaveCorrectionToggle from './features/simulation/components/WaveCorrectionToggle'; // V122_AQUANOVA_PRECISION_TOGGLE
 export default function App() {
   return (
-    <div className="h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden flex flex-col">
+    <>
+<div className="h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden flex flex-col">
       <div className="flex-none z-50">
         <Header />
       </div>
@@ -25,5 +27,7 @@ export default function App() {
         </Shell>
       </div>
     </div>
+      <WaveCorrectionToggle /> {/* V122_AQUANOVA_PRECISION_TOGGLE */}
+    </>
   );
 }

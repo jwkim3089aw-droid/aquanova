@@ -1,6 +1,5 @@
 // ui/src/features/simulation/results/pdf/panels/StageWaterQualityPanel.tsx
 import React from 'react';
-import { THEME } from '../theme';
 import { fmt, pct, first, pickNumFromKeys, pickNumber } from '../utils';
 import { UnitLabels } from '../types';
 
@@ -29,7 +28,6 @@ export function StageWaterQualityPanel({
     Qc: ['Qc', 'Qc_m3h', 'concentrate_flow_m3h', 'brine_flow_m3h', 'Qb'],
     Cc: ['Cc', 'Cc_mgL', 'concentrate_tds_mgL', 'brine_tds_mgL', 'Cb'],
     dP: ['dp_bar', 'dP_bar', 'delta_p_bar', 'deltaP_bar'],
-    // 🛑 UF Specific Keys
     grossQ: ['gross_flow_m3h'],
     bwLoss: ['backwash_loss_m3h'],
     netRec: ['net_recovery_pct'],
@@ -37,7 +35,11 @@ export function StageWaterQualityPanel({
 
   const rows = stages.map((s: any, idx: number) => {
     const stage = s?.stage ?? idx + 1;
-    const type = s?.module_type ?? 'RO';
+    const type = String(
+      s?.module_type ?? s?.type ?? s?.membrane_model ?? 'RO',
+    ).toUpperCase();
+
+    // 기본 값 추출
     const Qf = pickNumFromKeys(s, keys.Qf);
     const Cf = pickNumFromKeys(s, keys.Cf);
     const Qp = first(pickNumber(s?.Qp), pickNumFromKeys(s, keys.Qp));
@@ -45,10 +47,28 @@ export function StageWaterQualityPanel({
     const Qc = pickNumFromKeys(s, keys.Qc);
     const Cc = pickNumFromKeys(s, keys.Cc);
     const dP = first(pickNumber(s?.dp_bar), pickNumFromKeys(s, keys.dP));
-    const rec = pickNumber(s?.recovery_pct);
-    const grossQ = pickNumFromKeys(s, keys.grossQ);
-    const bwLoss = pickNumFromKeys(s, keys.bwLoss);
-    const netRec = pickNumFromKeys(s, keys.netRec);
+
+    let rec = pickNumber(s?.recovery_pct);
+    let grossQ = pickNumFromKeys(s, keys.grossQ);
+    let bwLoss = pickNumFromKeys(s, keys.bwLoss);
+    let netRec = pickNumFromKeys(s, keys.netRec);
+
+    // 💡 [PATCH] MF/UF 스마트 폴백 로직 적용 (0으로 들어오는 데이터까지 방어)
+    if (['MF', 'UF'].includes(type)) {
+      if (grossQ == null || grossQ === 0) grossQ = Qf;
+      if (bwLoss == null || bwLoss === 0) bwLoss = Qc;
+      const netFlow = Qp;
+
+      // 회수율(Gross) 계산 폴백
+      if (rec == null && grossQ > 0) {
+        rec = ((Qp + (Qc ?? 0)) / grossQ) * 100;
+      }
+
+      // 🎯 순 회수율(Net Rec)이 없거나 0.0일 경우, 유량 기반으로 역산하여 채움!
+      if (netRec == null || netRec === 0) {
+        netRec = grossQ > 0 ? (netFlow / grossQ) * 100 : 0;
+      }
+    }
 
     return {
       stage,
@@ -73,84 +93,99 @@ export function StageWaterQualityPanel({
     Qc: rows.some((r) => r.Qc != null),
     Cc: rows.some((r) => r.Cc != null),
     dP: rows.some((r) => r.dP != null),
-    // 시뮬레이션 내에 UF가 단 하나라도 있는지 확인
-    UF: rows.some((r) => r.grossQ != null || r.netRec != null),
+    UF: rows.some(
+      (r) =>
+        r.grossQ != null || r.netRec != null || ['MF', 'UF'].includes(r.type),
+    ),
   };
 
-  // ✅ 종이 출력(A4)에 맞게 공간을 최대한 절약하는 커스텀 클래스
-  const tightTh = `${THEME.TH} !px-1.5 !py-1 text-[8px] tracking-tighter text-center whitespace-pre-wrap break-keep leading-tight align-bottom`;
-  const tightTd = `${THEME.TD} !px-1.5 !py-1.5 text-[8.5px] tracking-tighter text-center break-keep`;
-  const tightTdLabel = `${THEME.TD_LABEL} !px-1.5 !py-1.5 text-[8.5px] tracking-tighter text-center whitespace-nowrap`;
+  // WAVE 스타일 테이블 클래스 정의
+  const thClass =
+    'py-1.5 px-2 text-[9px] font-bold text-slate-800 border border-slate-400 bg-slate-200 text-center whitespace-pre-wrap align-middle leading-tight tracking-tighter';
+  const tdClass =
+    'py-1 px-2 text-[10px] text-slate-800 border border-slate-300 text-center tabular-nums bg-white';
+  const highlightTd =
+    'py-1 px-2 text-[10px] font-bold text-blue-900 border border-slate-300 text-center tabular-nums bg-blue-50/50';
+  const labelTd =
+    'py-1 px-2 text-[10px] font-bold text-slate-800 border border-slate-300 text-center bg-slate-50';
 
   return (
-    <div className={THEME.TABLE_WRAP}>
-      {/* 가로 스크롤 제거 및 테이블 100% 채우기 */}
-      <table className={`${THEME.TABLE} table-fixed`}>
+    <div className="w-full print:break-inside-avoid overflow-x-auto">
+      <table className="w-full border-collapse border-2 border-slate-500 min-w-max">
         <thead>
           <tr>
-            <th className={tightTh}>Stage</th>
-            <th className={tightTh}>Type</th>
+            <th className={thClass}>구간{'\n'}(Stage)</th>
+            <th className={thClass}>공정 타입{'\n'}(Type)</th>
 
-            {has.Qf && <th className={tightTh}>{`Qf\n(${u.flow})`}</th>}
-            {has.Cf && <th className={tightTh}>{`Cf\n(mg/L)`}</th>}
+            {has.Qf && <th className={thClass}>{`유입수\n(${u.flow})`}</th>}
+            {has.Cf && <th className={thClass}>{`유입 TDS\n(mg/L)`}</th>}
 
-            {/* UF가 있을 때만 보이는 Gross Flow 헤더 */}
-            {has.UF && <th className={tightTh}>{`Gross Q\n(${u.flow})`}</th>}
+            {has.UF && <th className={thClass}>{`총 유량\n(${u.flow})`}</th>}
 
-            <th className={tightTh}>
-              {has.UF ? `Net Qp\n(${u.flow})` : `Qp\n(${u.flow})`}
+            {/* 🎯 핵심 결과 열 헤더 (생산수) */}
+            <th className={thClass}>
+              {has.UF ? `순 생산수\n(${u.flow})` : `생산수\n(${u.flow})`}
             </th>
-            <th className={tightTh}>{`Cp\n(mg/L)`}</th>
+            <th className={thClass}>{`생산 TDS\n(mg/L)`}</th>
 
-            {has.Qc && <th className={tightTh}>{`Qc\n(${u.flow})`}</th>}
+            {has.Qc && <th className={thClass}>{`농축수\n(${u.flow})`}</th>}
+            {has.UF && <th className={thClass}>{`역세 손실\n(${u.flow})`}</th>}
+            {has.Cc && <th className={thClass}>{`농축 TDS\n(mg/L)`}</th>}
+            {has.dP && (
+              <th className={thClass}>{`차압 ΔP\n(${u.pressure})`}</th>
+            )}
 
-            {/* UF가 있을 때만 보이는 역세척 손실 헤더 */}
-            {has.UF && <th className={tightTh}>{`BW Loss\n(${u.flow})`}</th>}
-
-            {has.Cc && <th className={tightTh}>{`Cc\n(mg/L)`}</th>}
-            {has.dP && <th className={tightTh}>{`ΔP\n(${u.pressure})`}</th>}
-
-            <th className={tightTh}>
-              {has.UF ? `Gross Rec\n(%)` : `Recovery\n(%)`}
+            <th className={thClass}>
+              {has.UF ? `총 회수율\n(%)` : `회수율\n(%)`}
             </th>
 
-            {/* UF가 있을 때만 보이는 순 회수율 헤더 */}
-            {has.UF && <th className={tightTh}>{`Net Rec\n(%)`}</th>}
+            {/* 🎯 핵심 결과 열 헤더 (순 회수율) */}
+            {has.UF && <th className={thClass}>{`순 회수율\n(%)`}</th>}
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} className={THEME.TR}>
-              <td className={tightTdLabel}>{`Stage ${r.stage}`}</td>
-              <td className={tightTd}>{String(r.type)}</td>
+            <tr key={i} className="hover:bg-slate-50/50">
+              <td className={labelTd}>{r.stage}</td>
+              <td className={tdClass}>{r.type}</td>
 
-              {has.Qf && <td className={tightTd}>{fmt(r.Qf)}</td>}
-              {has.Cf && <td className={tightTd}>{fmt(r.Cf)}</td>}
+              {has.Qf && (
+                <td className={tdClass}>{r.Qf != null ? fmt(r.Qf) : '-'}</td>
+              )}
+              {has.Cf && (
+                <td className={tdClass}>{r.Cf != null ? fmt(r.Cf) : '-'}</td>
+              )}
 
               {has.UF && (
-                <td className={tightTd}>
+                <td className={tdClass}>
                   {r.grossQ != null ? fmt(r.grossQ) : '-'}
                 </td>
               )}
 
-              <td className={tightTd}>{fmt(r.Qp)}</td>
-              <td className={tightTd}>{fmt(r.Cp)}</td>
+              {/* 🎯 핵심 결과 데이터 (Qp, Cp) - 강조 테마 적용 */}
+              <td className={highlightTd}>{r.Qp != null ? fmt(r.Qp) : '-'}</td>
+              <td className={highlightTd}>{r.Cp != null ? fmt(r.Cp) : '-'}</td>
 
-              {has.Qc && <td className={tightTd}>{fmt(r.Qc)}</td>}
-
+              {has.Qc && (
+                <td className={tdClass}>{r.Qc != null ? fmt(r.Qc) : '-'}</td>
+              )}
               {has.UF && (
-                <td className={tightTd}>
+                <td className={tdClass}>
                   {r.bwLoss != null ? fmt(r.bwLoss) : '-'}
                 </td>
               )}
+              {has.Cc && (
+                <td className={tdClass}>{r.Cc != null ? fmt(r.Cc) : '-'}</td>
+              )}
+              {has.dP && (
+                <td className={tdClass}>{r.dP != null ? fmt(r.dP) : '-'}</td>
+              )}
 
-              {has.Cc && <td className={tightTd}>{fmt(r.Cc)}</td>}
-              {has.dP && <td className={tightTd}>{fmt(r.dP)}</td>}
+              <td className={tdClass}>{r.rec == null ? '-' : pct(r.rec)}</td>
 
-              <td className={tightTd}>{r.rec == null ? '-' : pct(r.rec)}</td>
-
+              {/* 🎯 핵심 결과 데이터 (순 회수율) - 강조 테마 적용 */}
               {has.UF && (
-                <td className={tightTd}>
+                <td className={highlightTd}>
                   {r.netRec == null ? '-' : pct(r.netRec)}
                 </td>
               )}
@@ -159,9 +194,9 @@ export function StageWaterQualityPanel({
         </tbody>
       </table>
 
-      <div className="px-3 py-2 text-[10px] text-slate-500 bg-white border-t border-slate-200">
-        * UF 스테이지가 포함된 경우, 순수 생산량(Net Qp), 세정 손실량(BW Loss),
-        최종 순 회수율(Net Rec)이 분리되어 표시됩니다.
+      {/* PDF 원본 각주 스타일 재현 */}
+      <div className="mt-1 text-[9px] text-slate-500 font-medium">
+        * 강조된 열은 시스템의 최종 생산수(Product) 및 주요 성능 지표입니다.
       </div>
     </div>
   );

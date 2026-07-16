@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List, Optional, Any, Dict, Literal
 
 from fastapi import APIRouter, Query, HTTPException
-from app.api.v1.schemas import MembraneOut
+from app.schemas.membrane import MembraneOut
 
 # [Data Source]
 try:
