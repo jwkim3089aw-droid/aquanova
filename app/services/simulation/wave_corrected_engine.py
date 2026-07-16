@@ -322,3 +322,127 @@ def extract_wave_correction_options(
     return out
 
 # --- V130 request membrane propagation END ---
+# V132 NF process-context bridge
+#
+# V130's membrane-aware runtime selector requires ``wave_process_type``.
+# Earlier engine integration forwarded the membrane model but not the first
+# stage process, causing real NF ScenarioOutput objects to fall back to the
+# legacy process-only selector.
+_V132_PREVIOUS_EXTRACT_WAVE_CORRECTION_OPTIONS = (
+    extract_wave_correction_options
+)
+
+
+def _v132_read_value(value, key, default=None):
+    if value is None:
+        return default
+
+    if isinstance(value, dict):
+        return value.get(key, default)
+
+    return getattr(value, key, default)
+
+
+def _v132_normalize_process_type(value):
+    if value is None:
+        return ""
+
+    enum_value = getattr(value, "value", None)
+
+    if enum_value is not None:
+        value = enum_value
+
+    token = str(value).strip().lower()
+
+    if token.startswith("moduletype."):
+        token = token.rsplit(".", 1)[-1]
+
+    token = token.replace("-", "_").replace(" ", "_")
+
+    aliases = {
+        "nanofiltration": "nf",
+        "nano_filtration": "nf",
+        "reverse_osmosis": "ro",
+        "reverseosmosis": "ro",
+        "high_recovery_ro": "hrro",
+        "high_recovery_reverse_osmosis": "hrro",
+        "closed_circuit_ro": "ccro",
+        "closed_circuit_reverse_osmosis": "ccro",
+        "ultrafiltration": "uf",
+        "ultra_filtration": "uf",
+        "microfiltration": "mf",
+        "micro_filtration": "mf",
+    }
+
+    return aliases.get(token, token)
+
+
+def _v132_request_process_type(
+    request=None,
+    explicit_options=None,
+):
+    containers = [
+        explicit_options,
+        _v132_read_value(request, "options"),
+        request,
+    ]
+
+    for container in containers:
+        for key in (
+            "wave_process_type",
+            "process_type",
+            "module_type",
+            "technology",
+        ):
+            process = _v132_normalize_process_type(
+                _v132_read_value(container, key)
+            )
+
+            if process:
+                return process
+
+    stages = _v132_read_value(
+        request,
+        "stages",
+        [],
+    ) or []
+
+    if not isinstance(stages, (list, tuple)):
+        return ""
+
+    for stage in stages:
+        process = _v132_normalize_process_type(
+            _v132_read_value(
+                stage,
+                "module_type",
+            )
+        )
+
+        if process:
+            return process
+
+    return ""
+
+
+def extract_wave_correction_options(
+    request=None,
+    explicit_options=None,
+):
+    out = dict(
+        _V132_PREVIOUS_EXTRACT_WAVE_CORRECTION_OPTIONS(
+            request,
+            explicit_options,
+        )
+        or {}
+    )
+
+    if not out.get("wave_process_type"):
+        process_type = _v132_request_process_type(
+            request,
+            explicit_options,
+        )
+
+        if process_type:
+            out["wave_process_type"] = process_type
+
+    return out

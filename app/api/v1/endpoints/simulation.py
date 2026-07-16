@@ -68,6 +68,8 @@ def _v123a_sanitize_simulation_response_public(obj):
             )
     except Exception:
         pass
+    return obj
+
 
 
 # Project 모델 안전한 가져오기
