@@ -236,3 +236,89 @@ def run_simulation_with_optional_wave_correction(
         layer_path=layer_path,
         config_path=config_path,
     )
+# --- V130 request membrane propagation BEGIN ---
+#
+# Preserve the existing option extraction behavior, then attach the first
+# configured membrane model to runtime options. The current NF calibration
+# campaign uses one pressure-membrane stage per request.
+
+_V130_PREVIOUS_EXTRACT_OPTIONS = extract_wave_correction_options
+
+
+def _v130_request_membrane_model(request):
+    payload = _as_mapping(request)
+
+    for key in (
+        "wave_membrane_model",
+        "membrane_model",
+        "membrane_model_hint",
+    ):
+        value = payload.get(key)
+
+        if value not in (None, ""):
+            return str(value)
+
+    for section_name in (
+        "options",
+        "settings",
+        "calibration",
+        "runtime",
+        "advanced_options",
+    ):
+        section = _as_mapping(payload.get(section_name))
+
+        for key in (
+            "wave_membrane_model",
+            "membrane_model",
+            "membrane_model_hint",
+        ):
+            value = section.get(key)
+
+            if value not in (None, ""):
+                return str(value)
+
+    stages = payload.get("stages")
+
+    if stages is None and request is not None:
+        stages = getattr(request, "stages", None)
+
+    if not isinstance(stages, (list, tuple)):
+        return ""
+
+    for stage in stages:
+        stage_payload = _as_mapping(stage)
+
+        value = (
+            stage_payload.get("membrane_model")
+            or stage_payload.get("element_model")
+            or stage_payload.get("module_model")
+        )
+
+        if value not in (None, ""):
+            return str(value)
+
+    return ""
+
+
+def extract_wave_correction_options(
+    request=None,
+    explicit_options=None,
+):
+    out = _V130_PREVIOUS_EXTRACT_OPTIONS(
+        request,
+        explicit_options,
+    )
+
+    membrane_model = _v130_request_membrane_model(
+        request
+    )
+
+    if membrane_model:
+        out.setdefault(
+            "wave_membrane_model",
+            membrane_model,
+        )
+
+    return out
+
+# --- V130 request membrane propagation END ---
