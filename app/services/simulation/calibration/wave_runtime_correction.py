@@ -1737,3 +1737,127 @@ def apply_wave_runtime_corrections_to_output(
     return corrected_result, report
 
 # --- V130 NF membrane-aware runtime selector END ---
+# V132 ScenarioOutput exact metric-slot bridge
+#
+# Preserve every existing generic/legacy output search. For the public
+# ScenarioOutput schema, resolve the three calibrated NF metrics through their
+# canonical fields first:
+#   feed pressure  -> stage_metrics[0].p_in_bar
+#   product TDS    -> kpi.prod_tds
+#   specific energy -> kpi.sec_kwhm3
+_V132_PREVIOUS_FIND_METRIC_SLOT = (
+    _v118_find_metric_slot
+)
+
+
+def _v132_slot_get(parent, key, default=None):
+    if parent is None:
+        return default
+
+    if isinstance(parent, dict):
+        return parent.get(key, default)
+
+    return getattr(parent, key, default)
+
+
+def _v132_numeric_slot(
+    parent,
+    key,
+    path,
+):
+    raw = _v132_slot_get(
+        parent,
+        key,
+        None,
+    )
+
+    if raw is None or isinstance(raw, bool):
+        return None
+
+    try:
+        numeric = float(raw)
+    except (TypeError, ValueError):
+        return None
+
+    if numeric != numeric:
+        return None
+
+    if numeric in (float("inf"), float("-inf")):
+        return None
+
+    return (
+        parent,
+        key,
+        numeric,
+        path,
+    )
+
+
+def _v132_first_stage_metric(result):
+    metrics = _v132_slot_get(
+        result,
+        "stage_metrics",
+        None,
+    )
+
+    if not isinstance(metrics, (list, tuple)):
+        return None
+
+    if not metrics:
+        return None
+
+    return metrics[0]
+
+
+def _v118_find_metric_slot(
+    result,
+    metric: str,
+):
+    metric_name = str(
+        metric or ""
+    ).strip().lower()
+
+    if metric_name == "feed_pressure":
+        stage_metric = _v132_first_stage_metric(
+            result
+        )
+
+        slot = _v132_numeric_slot(
+            stage_metric,
+            "p_in_bar",
+            "stage_metrics[0].p_in_bar",
+        )
+
+        if slot is not None:
+            return slot
+
+    kpi = _v132_slot_get(
+        result,
+        "kpi",
+        None,
+    )
+
+    if metric_name == "product_tds":
+        slot = _v132_numeric_slot(
+            kpi,
+            "prod_tds",
+            "kpi.prod_tds",
+        )
+
+        if slot is not None:
+            return slot
+
+    if metric_name == "specific_energy":
+        slot = _v132_numeric_slot(
+            kpi,
+            "sec_kwhm3",
+            "kpi.sec_kwhm3",
+        )
+
+        if slot is not None:
+            return slot
+
+    return _V132_PREVIOUS_FIND_METRIC_SLOT(
+        result,
+        metric,
+    )
