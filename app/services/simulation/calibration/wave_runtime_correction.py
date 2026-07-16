@@ -512,6 +512,11 @@ def install_runtime_layer(
     cfg_out = write_runtime_config(config_dest, cfg)
     return {"layer": str(layer_out), "config": str(cfg_out)}
 
+# Preserve the in-module legacy V94/V95 runtime implementation before V118
+# redefines apply_wave_runtime_corrections_to_output. Clean checkouts must not
+# depend on local .bak files for non-residual V92/V97 correction layers.
+_V118_LEGACY_APPLY = apply_wave_runtime_corrections_to_output
+
 # --- V118 residual-aware runtime bridge patch BEGIN ---
 # Appended by scripts/wave_records/apply_v118_runtime_residual_bridge_patch.py
 
@@ -988,6 +993,13 @@ def _v118b_is_residual_layer(correction_layer):
     return False
 
 def _v118b_legacy_apply():
+    legacy = globals().get("_V118_LEGACY_APPLY")
+
+    if callable(legacy):
+        return legacy
+
+    # Backward-compatible fallback for old developer worktrees that still
+    # contain pre-V118 backup files.
     helper_path = _V118BPath(__file__).resolve()
     for suffix in (".v117_before_v118.bak", ".v118_syntax_error.bak", ".v118a_before_v118b.bak"):
         backup = helper_path.with_suffix(helper_path.suffix + suffix)

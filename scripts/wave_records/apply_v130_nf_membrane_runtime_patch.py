@@ -544,6 +544,101 @@ def extract_wave_correction_options(
 '''
 
 
+
+def ensure_self_contained_legacy_runtime(
+    path: Path,
+) -> None:
+    """Remove the clean-checkout dependency on local V118 backup files."""
+
+    text = path.read_text(
+        encoding="utf-8",
+        errors="strict",
+    )
+
+    v118_marker = (
+        "# --- V118 residual-aware runtime bridge patch BEGIN ---"
+    )
+
+    capture_line = (
+        "_V118_LEGACY_APPLY = "
+        "apply_wave_runtime_corrections_to_output"
+    )
+
+    capture_block = (
+        "# Preserve the in-module legacy V94/V95 runtime implementation "
+        "before V118\n"
+        "# redefines apply_wave_runtime_corrections_to_output. "
+        "Clean checkouts must not\n"
+        "# depend on local .bak files for non-residual V92/V97 "
+        "correction layers.\n"
+        "_V118_LEGACY_APPLY = "
+        "apply_wave_runtime_corrections_to_output\n\n"
+    )
+
+    legacy_old = (
+        "def _v118b_legacy_apply():\n"
+        "    helper_path = _V118BPath(__file__).resolve()\n"
+    )
+
+    legacy_new = (
+        "def _v118b_legacy_apply():\n"
+        "    legacy = globals().get(\"_V118_LEGACY_APPLY\")\n\n"
+        "    if callable(legacy):\n"
+        "        return legacy\n\n"
+        "    # Backward-compatible fallback for old developer "
+        "worktrees that still\n"
+        "    # contain pre-V118 backup files.\n"
+        "    helper_path = _V118BPath(__file__).resolve()\n"
+    )
+
+    changed = False
+
+    if capture_line not in text:
+        if v118_marker not in text:
+            raise RuntimeError(
+                f"V118 marker not found: {path}"
+            )
+
+        text = text.replace(
+            v118_marker,
+            capture_block + v118_marker,
+            1,
+        )
+
+        changed = True
+
+    if (
+        'legacy = globals().get("_V118_LEGACY_APPLY")'
+        not in text
+    ):
+        if legacy_old not in text:
+            raise RuntimeError(
+                f"Legacy fallback target not found: {path}"
+            )
+
+        text = text.replace(
+            legacy_old,
+            legacy_new,
+            1,
+        )
+
+        changed = True
+
+    if changed:
+        path.write_text(
+            text.rstrip() + "\n",
+            encoding="utf-8",
+        )
+
+        print(
+            f"PATCHED self-contained legacy runtime: {path}"
+        )
+    else:
+        print(
+            f"SKIP self-contained legacy runtime already present: "
+            f"{path}"
+        )
+
 def append_once(
     path: Path,
     marker: str,
@@ -575,6 +670,8 @@ def main() -> int:
         if not path.exists():
             print(f"FAIL missing source: {path}")
             return 1
+
+    ensure_self_contained_legacy_runtime(RUNTIME_PATH)
 
     append_once(
         RUNTIME_PATH,
