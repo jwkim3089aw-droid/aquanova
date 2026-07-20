@@ -11,6 +11,7 @@ import {
   StageWaterQualityPanel,
   SystemWarningsPanel,
   HRROCoreStatusTable,
+  HRROProcessFlowPanel,
   HRROHistoryChart,
   HistoryStatsTable,
   BrineScalingPanel,
@@ -398,6 +399,18 @@ export const ReportTemplate = React.forwardRef<HTMLDivElement, ReportProps>(
           <Section title="운전 상태 (Target vs Achieved)">
             <HRROCoreStatusTable stage={s} u={u} />
           </Section>
+
+          {s?.chemistry?.ccro_cycle && (
+            <>
+              <div className="h-3" />
+              <Section title="CC/PF 공정 흐름 및 운전점 (Process Flow & Operating Points)">
+                <HRROProcessFlowPanel
+                  stage={s}
+                  unitLabels={u}
+                />
+              </Section>
+            </>
+          )}
         </Page>,
         ...(history.length > 0
           ? [

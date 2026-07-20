@@ -514,6 +514,70 @@ test(
       formattedFlow(recycle),
     );
 
+    await Promise.all([
+      page.waitForURL('**/reports'),
+      page
+        .getByRole('button', {
+          name: '리포트 생성',
+          exact: true,
+        })
+        .click(),
+    ]);
+
+    const reportFlow = page.getByTestId(
+      'hrro-report-process-flow',
+    );
+
+    await reportFlow.scrollIntoViewIfNeeded();
+
+    await expect(reportFlow).toBeVisible({
+      timeout: 60_000,
+    });
+
+    await expect(reportFlow).toContainText(
+      'Smart Partial Drain',
+    );
+    await expect(reportFlow).toContainText(
+      '150%',
+    );
+    await expect(reportFlow).toContainText(
+      'CC 농축 운전',
+    );
+    await expect(reportFlow).toContainText(
+      'PF 플러시 운전',
+    );
+
+    await expect(
+      page.getByTestId('hrro-report-cc-drain'),
+    ).toContainText('0 m³/h/PV');
+
+    await expect(
+      page.getByTestId('hrro-report-cc-recycle'),
+    ).toContainText('4.5 m³/h/PV');
+
+    await expect(
+      page.getByTestId('hrro-report-pf-drain'),
+    ).toContainText(
+      formattedFlow(drain),
+    );
+
+    await expect(
+      page.getByTestId('hrro-report-pf-recycle'),
+    ).toContainText(
+      formattedFlow(recycle),
+    );
+
+    await expect(reportFlow).toContainText(
+      formattedFlow(membraneFeed),
+    );
+
+    await expect(
+      page.getByRole('button', {
+        name: 'PDF 다운로드',
+        exact: true,
+      }),
+    ).toBeVisible();
+
     const body = page.locator('body');
 
     await expect(body).not.toContainText(

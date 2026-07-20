@@ -10,6 +10,7 @@ export * from './SystemWarningsPanel';
 
 // --- 2. HRRO 특화 데이터 (HRRO Specific) ---
 export * from './HRROCoreStatusTable';
+export * from './HRROProcessFlowPanel';
 export * from './HRROHistoryChart';
 export * from './HistoryStatsTable';
 export * from './TimeHistoryTable';
