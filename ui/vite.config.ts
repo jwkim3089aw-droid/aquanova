@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => {
       // host: true로 설정하면 '0.0.0.0'으로 바인딩되어
       // 외부(모바일, 다른 PC)에서도 접속 가능합니다. (IP 하드코딩 불필요)
       host: true,
-      port: 5173,
+      port: 5174,
 
       // 개발 생산성을 위해 에러 오버레이는 켜두는 것이 정석입니다.
       // (너무 불편하면 다시 주석 해제하세요)
@@ -28,9 +28,13 @@ export default defineConfig(({ mode }) => {
 
       proxy: {
         '/api': {
-          // 1순위: .env 파일의 VITE_API_URL
-          // 2순위: 로컬 백엔드 기본 주소 (localhost:8003)
-          target: env.VITE_API_URL || 'http://localhost:8003',
+          // 1순위: 실행 환경의 VITE_API_URL
+          // 2순위: .env 파일의 VITE_API_URL
+          // 3순위: 로컬 백엔드 기본 주소 (127.0.0.1:8003)
+          target:
+            process.env.VITE_API_URL ||
+            env.VITE_API_URL ||
+            'http://127.0.0.1:8003',
           changeOrigin: true,
           secure: false,
         },

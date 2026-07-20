@@ -1,8 +1,8 @@
 // ui/src/api/client.ts
 import axios from 'axios';
 
-// ✅ [원복] 복잡하게 IP 따라가지 말고, 그냥 무조건 로컬로 쏘게 고정합니다.
-const API_BASE_URL = 'http://127.0.0.1:8001/api/v1';
+// 브라우저는 동일 출처 API 경로를 사용하고, 개발 환경에서는 Vite가 실제 API로 프록시합니다.
+const API_BASE_URL = '/api/v1';
 
 export const axiosInstance = axios.create({
   baseURL: API_BASE_URL,
