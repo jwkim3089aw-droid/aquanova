@@ -102,7 +102,7 @@ export function AuditTab({
                   HRRO PF 제어 / Adaptive Recovery
                 </h4>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  V82/V83 smart_partial_drain_pf, P-3 연동, 부분 배출 PID, 조기 PF 전환 진단값입니다.
+                  P-3 연동, 자동 배출 및 조기 PF 전환에 대한 운전 진단값입니다.
                 </p>
               </div>
               <span
@@ -112,7 +112,11 @@ export function AuditTab({
                     : 'bg-slate-950/60 text-slate-400 border-slate-700'
                 }`}
               >
-                {cycle.pf_mode || 'wave_true_plug_flow'}
+                {cycle.pf_mode === 'wave_true_plug_flow'
+                  ? '고유량 PF 운전'
+                  : cycle.pf_mode === 'field_optimized_low_fr'
+                    ? '저유량 PF 운전'
+                    : '자동 PF 운전'}
               </span>
             </div>
 

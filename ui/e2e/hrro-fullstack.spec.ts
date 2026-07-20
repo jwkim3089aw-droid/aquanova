@@ -5,6 +5,11 @@ import {
   type Page,
 } from '@playwright/test';
 
+import {
+  readFile,
+  stat,
+} from 'node:fs/promises';
+
 const SESSION_KEY = 'AQUANOVA_SESSION_V1';
 
 interface HRROStagePayload {
@@ -289,7 +294,9 @@ function formattedFlow(value: number): string {
 
 test(
   'HRRO smart FR150 runs through the real API and renders the process flow',
-  async ({ page }) => {
+  async ({ page }, testInfo) => {
+    test.setTimeout(180_000);
+
     await prepareScenario(page);
 
     const {
@@ -428,9 +435,29 @@ test(
     });
 
     await expect(diagram).toContainText(
-      'Smart Partial Drain',
+      '자동 PF 운전',
     );
     await expect(diagram).toContainText('FR 150%');
+
+    for (const internalLabel of [
+      'Smart Partial Drain',
+      'WAVE True Plug',
+      'True Plug-Flow',
+      'Field Optimized',
+      'Low-FR Field',
+      'Partial PID',
+      'Full Open',
+      'smart_partial_drain',
+      'wave_true_plug_flow',
+      'field_optimized_low_fr',
+      'partial_pid',
+      'pf_mode',
+      'ccro_cycle',
+    ]) {
+      await expect(diagram).not.toContainText(
+        internalLabel,
+      );
+    }
     await expect(diagram).toContainText(
       '운전 조건 정상',
     );
@@ -535,11 +562,31 @@ test(
     });
 
     await expect(reportFlow).toContainText(
-      'Smart Partial Drain',
+      '자동 PF 운전',
     );
     await expect(reportFlow).toContainText(
       '150%',
     );
+
+    for (const internalLabel of [
+      'Smart Partial Drain',
+      'WAVE True Plug',
+      'True Plug-Flow',
+      'Field Optimized',
+      'Low-FR Field',
+      'Partial PID',
+      'Full Open',
+      'smart_partial_drain',
+      'wave_true_plug_flow',
+      'field_optimized_low_fr',
+      'partial_pid',
+      'pf_mode',
+      'ccro_cycle',
+    ]) {
+      await expect(reportFlow).not.toContainText(
+        internalLabel,
+      );
+    }
     await expect(reportFlow).toContainText(
       'CC 농축 운전',
     );
@@ -571,12 +618,95 @@ test(
       formattedFlow(membraneFeed),
     );
 
-    await expect(
-      page.getByRole('button', {
+    const pdfButton = page.getByRole(
+      'button',
+      {
         name: 'PDF 다운로드',
         exact: true,
-      }),
-    ).toBeVisible();
+      },
+    );
+
+    await expect(pdfButton).toBeVisible();
+
+    /*
+     * PDF_BINARY_SMOKE_V136
+     *
+     * Reports.tsx calls:
+     * exportToPdf(
+     *   'report-viewer-content',
+     *   'AquaNova_Report.pdf',
+     * )
+     *
+     * usePdfExport.tsx creates a jsPDF instance and
+     * finishes with pdf.save(fileName).
+     */
+    const downloadPromise = page.waitForEvent(
+      'download',
+      {
+        timeout: 120_000,
+      },
+    );
+
+    await pdfButton.click();
+
+    const download = await downloadPromise;
+    const downloadFailure =
+      await download.failure();
+
+    expect(
+      downloadFailure,
+      `PDF download failed: ${downloadFailure}`,
+    ).toBeNull();
+
+    expect(
+      download.suggestedFilename(),
+    ).toBe('AquaNova_Report.pdf');
+
+    const pdfPath = testInfo.outputPath(
+      'AquaNova_Report.pdf',
+    );
+
+    await download.saveAs(pdfPath);
+
+    const pdfFileStat = await stat(pdfPath);
+
+    expect(
+      pdfFileStat.size,
+      'Generated PDF must not be empty or truncated',
+    ).toBeGreaterThan(100_000);
+
+    const pdfBytes = await readFile(pdfPath);
+
+    expect(
+      pdfBytes
+        .subarray(0, 5)
+        .toString('ascii'),
+    ).toBe('%PDF-');
+
+    /*
+     * jsPDF leaves page dictionaries uncompressed.
+     * The word boundary excludes the /Pages root.
+     */
+    const pdfLatin1 =
+      pdfBytes.toString('latin1');
+
+    const pageObjects =
+      pdfLatin1.match(
+        /\/Type\s*\/Page\b/g,
+      ) ?? [];
+
+    expect(
+      pageObjects.length,
+      'Generated PDF must contain exactly five logical pages without a trailing blank page',
+    ).toBe(5);
+
+    await testInfo.attach(
+      'AquaNova_Report.pdf',
+      {
+        path: pdfPath,
+        contentType: 'application/pdf',
+      },
+    );
 
     const body = page.locator('body');
 

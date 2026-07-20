@@ -265,11 +265,11 @@ export function HRROProcessFlowDiagram({
   );
 
   const modeLabel =
-    mode === 'smart_partial_drain'
-      ? 'Smart Partial Drain'
+    mode === 'wave_true_plug_flow'
+      ? '고유량 PF 운전'
       : mode === 'field_optimized_low_fr'
-        ? 'Low-FR Field Optimized'
-        : 'WAVE True Plug-Flow';
+        ? '저유량 PF 운전'
+        : '자동 PF 운전';
 
   const smartMode =
     mode === 'smart_partial_drain' ||
@@ -387,8 +387,8 @@ export function HRROProcessFlowDiagram({
   const valveDescription =
     isPF
       ? smartMode
-        ? 'Partial PID'
-        : 'Full Open'
+        ? '자동 조절'
+        : '완전 개방'
       : 'CC 재순환';
 
   return (

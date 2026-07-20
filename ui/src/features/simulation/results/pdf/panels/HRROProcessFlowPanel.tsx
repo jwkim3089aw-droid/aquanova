@@ -552,11 +552,11 @@ export function HRROProcessFlowPanel({
   );
 
   const modeLabel =
-    mode === 'smart_partial_drain'
-      ? 'Smart Partial Drain'
+    mode === 'wave_true_plug_flow'
+      ? '고유량 PF 운전'
       : mode === 'field_optimized_low_fr'
-        ? 'Field Optimized Low-FR'
-        : 'True Plug-Flow';
+        ? '저유량 PF 운전'
+        : '자동 PF 운전';
 
   const crossflowOk =
     cycle.crossflow_ok !== false;
@@ -736,17 +736,19 @@ export function HRROProcessFlowPanel({
         valveState={
           cycle.brine_valve_mode
           === 'partial_pid'
-            ? 'Partial PID'
+            ? '자동 조절'
             : cycle.brine_valve_mode
-              ?? '—'
+              === 'full_open'
+              ? '완전 개방'
+              : '—'
         }
         p3Running={(pfRecycle ?? 0) > 0}
         pressureUnit={pressureUnit}
       />
 
       <div className="text-[7.5px] font-medium text-slate-500">
-        * 표시값은 현재 HRRO 계산 결과의 CC/PF 시계열 및
-        ccro_cycle 질량수지 결과를 사용합니다.
+        * 표시값은 현재 HRRO 계산 결과의 CC/PF 시계열과
+        사이클 질량수지 결과를 사용합니다.
       </div>
     </div>
   );

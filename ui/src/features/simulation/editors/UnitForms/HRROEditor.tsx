@@ -373,37 +373,33 @@ export function HRROEditor({
           <div className="grid grid-cols-2 gap-2 flex-1 min-h-0">
             <div className="flex flex-col p-3 border border-indigo-900/40 bg-indigo-900/10 rounded-lg">
               <h4 className="text-indigo-400 font-bold mb-3 text-[10px] uppercase border-b border-indigo-900/30 pb-1">
-                🔄 PF 운전 모드 / P-3 연동
+                🔄 PF 운전 / P-3 연동
               </h4>
               <div className="flex flex-col gap-3">
-                <Field label="PF 모드">
-                  <select
-                    className="h-7 text-xs bg-slate-950 border border-slate-700 rounded px-2 outline-none text-slate-100 focus:border-blue-500"
-                    value={pfMode}
-                    onChange={(e) => {
-                      const nextMode = e.target.value as any;
-                      patch({
-                        pf_mode: nextMode,
-                        brine_valve_mode:
-                          nextMode === 'wave_true_plug_flow'
-                            ? 'full_open'
-                            : 'partial_pid',
-                        pf_cp_assist_enabled:
-                          nextMode === 'wave_true_plug_flow' ? false : true,
-                      } as any);
-                    }}
-                  >
-                    <option value="wave_true_plug_flow">
-                      WAVE True Plug Flow · P-3 OFF · 밸브 100% open
-                    </option>
-                    <option value="smart_partial_drain">
-                      Smart Partial Drain · P-3 ON · 부분 배출 PID
-                    </option>
-                    <option value="field_optimized_low_fr">
-                      Field Optimized Low-FR · 저FR 실험 운전
-                    </option>
-                  </select>
-                </Field>
+                <div
+                  data-testid="hrro-pf-operation-summary"
+                  className="rounded border border-indigo-800/50 bg-slate-950/50 px-3 py-2"
+                >
+                  <div className="text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                    PF 운전 방식
+                  </div>
+
+                  <div className="mt-1 text-[11px] font-bold text-indigo-200">
+                    {pfMode === 'wave_true_plug_flow'
+                      ? '고유량 PF 운전'
+                      : pfMode === 'field_optimized_low_fr'
+                        ? '저유량 PF 운전'
+                        : '자동 PF 운전'}
+                  </div>
+
+                  <div className="mt-1 text-[9px] leading-relaxed text-slate-500">
+                    {pfMode === 'wave_true_plug_flow'
+                      ? 'PF 공급 유량으로 막 유속을 확보하는 운전입니다.'
+                      : pfMode === 'field_optimized_low_fr'
+                        ? '낮은 PF 공급 유량과 P-3 재순환을 함께 사용하는 운전입니다.'
+                        : 'P-3 재순환과 농축수 배출을 운전 조건에 맞춰 자동 조절합니다.'}
+                  </div>
+                </div>
 
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="PF Feed Ratio (FR, %)">
@@ -498,8 +494,8 @@ export function HRROEditor({
                 </div>
 
                 <div className="text-[10px] text-slate-500 leading-relaxed">
-                  Smart Partial Drain은 P-3 ON + 농축수 밸브 부분 개방 PID를 한 세트로 계산합니다.
-                  P-3만 켜고 밸브를 100% 열면 이 모드가 아닙니다.
+                  현재 PF 운전은 P-3 재순환과 농축수 배출을 함께 계산합니다.
+                  배출량과 재순환 용량은 막 유속 및 질량수지 조건에 따라 자동 판정됩니다.
                 </div>
               </div>
             </div>
