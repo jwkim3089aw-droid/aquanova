@@ -31,6 +31,12 @@ from app.services.simulation.calibration.wave_correction_layer import apply_corr
 
 SCHEMA_VERSION = "aquanova.wave_runtime_correction.v97"
 DEFAULT_LAYER_PATH = ".data/wave_correction_layer.json"
+
+PACKAGED_LAYER_PATH = (
+    Path(__file__).resolve().parent
+    / "layers"
+    / "wave_correction_layer_v131.json"
+)
 DEFAULT_CONFIG_PATH = ".data/wave_correction_runtime_config.json"
 
 ENABLE_OPTION_KEYS = (
@@ -128,7 +134,23 @@ def load_json(path: str | Path) -> dict[str, Any]:
 
 
 def load_correction_layer(path: str | Path | None = None) -> dict[str, Any]:
-    layer_path = Path(path or os.getenv("AQUANOVA_WAVE_CORRECTION_LAYER", DEFAULT_LAYER_PATH))
+    requested_layer_path = Path(
+        path
+        or os.getenv(
+            "AQUANOVA_WAVE_CORRECTION_LAYER",
+            DEFAULT_LAYER_PATH,
+        )
+    )
+
+    layer_path = requested_layer_path
+
+    if (
+        not layer_path.exists()
+        and requested_layer_path == Path(DEFAULT_LAYER_PATH)
+        and PACKAGED_LAYER_PATH.exists()
+    ):
+        layer_path = PACKAGED_LAYER_PATH
+
     payload = load_json(layer_path)
     if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
         raise ValueError(f"Unsupported WAVE correction-layer payload: {layer_path}")
