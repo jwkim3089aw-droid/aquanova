@@ -1,66 +1,46 @@
 import React, { useEffect, useState } from 'react';
 
-const STORAGE_KEY = 'aquanova.precisionModeEnabled';
-const LEGACY_STORAGE_KEY = 'aquanova.waveCorrectionEnabled';
-
-function isTruthy(value: string | null | undefined): boolean {
-  return ['1', 'true', 'yes', 'on', 'precision', 'calibrated'].includes(String(value || '').toLowerCase());
-}
-
-function readEnabled(): boolean {
-  try {
-    if (typeof window === 'undefined') return false;
-    const url = new URL(window.location.href);
-    const query =
-      url.searchParams.get('precision_mode') ??
-      url.searchParams.get('precisionMode') ??
-      url.searchParams.get('calibrated') ??
-      url.searchParams.get('wave_correction') ??
-      url.searchParams.get('waveCorrection') ??
-      url.searchParams.get('wave_calibration');
-
-    if (isTruthy(query)) return true;
-
-    const current = window.localStorage.getItem(STORAGE_KEY);
-    if (current !== null) return isTruthy(current);
-
-    return isTruthy(window.localStorage.getItem(LEGACY_STORAGE_KEY));
-  } catch {
-    return false;
-  }
-}
+import {
+  PRECISION_MODE_CHANGE_EVENT,
+  readPrecisionModeEnabled,
+  writePrecisionModeEnabled,
+} from '../precisionMode';
 
 export default function WaveCorrectionToggle() {
-  const [enabled, setEnabled] = useState<boolean>(readEnabled);
+  const [enabled, setEnabled] = useState<boolean>(
+    readPrecisionModeEnabled,
+  );
 
   useEffect(() => {
-    try {
-      const onStorage = () => setEnabled(readEnabled());
-      window.addEventListener('storage', onStorage);
-      return () => window.removeEventListener('storage', onStorage);
-    } catch {
-      return undefined;
-    }
+    const sync = () => {
+      setEnabled(readPrecisionModeEnabled());
+    };
+
+    window.addEventListener('storage', sync);
+    window.addEventListener(
+      PRECISION_MODE_CHANGE_EVENT,
+      sync,
+    );
+
+    return () => {
+      window.removeEventListener('storage', sync);
+      window.removeEventListener(
+        PRECISION_MODE_CHANGE_EVENT,
+        sync,
+      );
+    };
   }, []);
 
   const toggle = () => {
     const next = !enabled;
     setEnabled(next);
-    try {
-      if (next) {
-        window.localStorage.setItem(STORAGE_KEY, 'true');
-      } else {
-        window.localStorage.removeItem(STORAGE_KEY);
-        window.localStorage.removeItem(LEGACY_STORAGE_KEY);
-      }
-    } catch {
-      // Ignore browser storage failures; the UI state still updates.
-    }
+    writePrecisionModeEnabled(next);
   };
 
   return (
     <div
       data-aquanova-precision-toggle
+      data-testid="precision-mode-toggle"
       style={{
         position: 'fixed',
         right: 18,
@@ -81,16 +61,32 @@ export default function WaveCorrectionToggle() {
       }}
       title="검증된 조건에서만 정밀 보정이 적용됩니다. 기본 계산은 AquaNova 물리 모델입니다."
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <strong style={{ fontSize: 12 }}>AquaNova 정밀 모드</strong>
-        <span style={{ color: enabled ? '#bbf7d0' : '#cbd5e1' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+        }}
+      >
+        <strong style={{ fontSize: 12 }}>
+          AquaNova 정밀 모드
+        </strong>
+
+        <span
+          data-testid="precision-mode-state"
+          style={{
+            color: enabled ? '#bbf7d0' : '#cbd5e1',
+          }}
+        >
           {enabled ? 'ON · 정밀' : 'OFF · 기본'}
         </span>
       </div>
 
       <button
         type="button"
+        aria-label="AquaNova 정밀 모드"
         aria-pressed={enabled}
+        data-testid="precision-mode-toggle-button"
         onClick={toggle}
         style={{
           width: 46,
@@ -110,7 +106,9 @@ export default function WaveCorrectionToggle() {
             height: 18,
             borderRadius: '50%',
             background: '#fff',
-            transform: enabled ? 'translateX(20px)' : 'translateX(0)',
+            transform: enabled
+              ? 'translateX(20px)'
+              : 'translateX(0)',
             transition: 'transform 120ms ease',
           }}
         />
