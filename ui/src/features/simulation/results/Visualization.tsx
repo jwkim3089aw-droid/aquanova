@@ -32,8 +32,6 @@ import {
   HRROBatchChart,
 } from './VisualizationWidgets';
 
-import { PrecisionReportPanel } from './PrecisionReportPanel';
-
 export function Visualization({
   result,
   unitMode,
@@ -138,10 +136,6 @@ export function Visualization({
               </ul>
             </div>
           )}
-
-          <PrecisionReportPanel
-            report={result.precision_report ?? null}
-          />
 
           {/* 📊 KPI 요약 */}
           <div className="space-y-2.5">
