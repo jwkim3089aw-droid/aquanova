@@ -21,7 +21,6 @@ import {
 import { mapChemistryToBackend } from './utils';
 // 프론트엔드 데이터베이스 카탈로그 임포트
 import { getFallbackMembrane } from '../../data/membrane_catalog';
-import { readPrecisionModeEnabled } from '../../precisionMode';
 
 
 
@@ -152,12 +151,12 @@ export function useFlowRunner(props: {
           return stage;
         });
 
-      const precisionModeEnabled = readPrecisionModeEnabled();
+      const validatedAdjustmentEnabled = true;
       const payload: SimulationRequest = {
         simulation_id: cryptoRandomId(),
         project_id: resolveProjectId(),
-        precision_mode_enabled: precisionModeEnabled,
-        engine_mode: precisionModeEnabled ? 'precision' : 'raw',
+        precision_mode_enabled: validatedAdjustmentEnabled,
+        engine_mode: 'precision',
         scenario_name: scenarioName,
         feed: feedSI,
         stages: stagesPayload,
@@ -172,12 +171,8 @@ export function useFlowRunner(props: {
 
       const output = await runSimulation(payload);
       const outDisp = convertROutToDisplay(output as any, unitMode);
-      const outDispWithPrecision = {
-        ...outDisp,
-        precision_report: output.precision_report ?? null,
-      };
 
-      setData(outDispWithPrecision);
+      setData(outDisp);
       setChemSummary((output as any).chemistry ?? null);
 
       applyStageChips(
