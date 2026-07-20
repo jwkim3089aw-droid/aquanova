@@ -5,7 +5,10 @@ const reuseExistingServer =
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: 'nf-fullstack.spec.ts',
+  testMatch: [
+    'nf-fullstack.spec.ts',
+    'hrro-fullstack.spec.ts',
+  ],
   fullyParallel: false,
   workers: 1,
   reporter: 'list',

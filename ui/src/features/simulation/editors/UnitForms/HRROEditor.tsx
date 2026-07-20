@@ -44,9 +44,9 @@ export function HRROEditor({
     timestep_s: 5,
     max_minutes: 60,
     stop_recovery_pct: 90,
-    pf_feed_ratio_pct: 120,
+    pf_feed_ratio_pct: 150,
     pf_recovery_pct: 20,
-    pf_mode: 'wave_true_plug_flow',
+    pf_mode: 'smart_partial_drain',
     brine_valve_mode: 'full_open',
     p3_recycle_capacity_m3h_per_pv: 4.54,
     pf_cp_assist_enabled: false,
@@ -76,7 +76,7 @@ export function HRROEditor({
   const totalArea = currentArea * (cfg.elements || 50);
   const flux = totalArea > 0 ? (permeateFlow * 1000) / totalArea : 0;
 
-  const pfMode = cfg.pf_mode ?? 'wave_true_plug_flow';
+  const pfMode = cfg.pf_mode ?? 'smart_partial_drain';
   const pfFeedRatio = (cfg.pf_feed_ratio_pct ?? 120) / 100;
   const pfFeedFlow = permeateFlow * pfFeedRatio;
   const minConcentrateFlow =

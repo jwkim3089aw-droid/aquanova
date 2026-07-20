@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: '**/nf-fullstack.spec.ts',
+  testIgnore: '**/*-fullstack.spec.ts',
   fullyParallel: false,
   workers: 1,
   reporter: 'list',

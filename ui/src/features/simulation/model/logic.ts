@@ -442,9 +442,9 @@ export function defaultConfig(k: UnitKind): StageConfig {
       timestep_s: 5,
       hrro_engine: 'physics',
       cc_recycle_m3h_per_pv: 4.33,
-      pf_feed_ratio_pct: 270.0,
+      pf_feed_ratio_pct: 150.0,
       pf_recovery_pct: 10.0,
-      pf_mode: 'wave_true_plug_flow',
+      pf_mode: 'smart_partial_drain',
       brine_valve_mode: 'full_open',
       p3_recycle_capacity_m3h_per_pv: 4.54,
       pf_cp_assist_enabled: false,
@@ -579,15 +579,15 @@ export function toStagePayload(
         elements_per_vessel: cfg.elements_per_vessel ?? 5,
         feed_flow_m3h: cfg.feed_flow_m3h ?? null,
         ccro_recovery_pct: cfg.ccro_recovery_pct ?? null,
-        pf_feed_ratio_pct: cfg.pf_feed_ratio_pct ?? 110.0,
+        pf_feed_ratio_pct: cfg.pf_feed_ratio_pct ?? 150.0,
         pf_recovery_pct: cfg.pf_recovery_pct ?? 10.0,
         cc_recycle_m3h_per_pv: cfg.cc_recycle_m3h_per_pv ?? null,
 
         // V83: pass V82 HRRO smart-PF/adaptive-control fields through to API
-        pf_mode: cfg.pf_mode ?? 'wave_true_plug_flow',
+        pf_mode: cfg.pf_mode ?? 'smart_partial_drain',
         brine_valve_mode:
           cfg.brine_valve_mode ??
-          ((cfg.pf_mode ?? 'wave_true_plug_flow') === 'wave_true_plug_flow'
+          ((cfg.pf_mode ?? 'smart_partial_drain') === 'wave_true_plug_flow'
             ? 'full_open'
             : 'partial_pid'),
         p3_recycle_capacity_m3h_per_pv:

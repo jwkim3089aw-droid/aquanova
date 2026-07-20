@@ -31,6 +31,7 @@ import {
   UFDetailContent,
   HRROBatchChart,
 } from './VisualizationWidgets';
+import { HRROProcessFlowDiagram } from './HRROProcessFlowDiagram';
 
 export function Visualization({
   result,
@@ -401,11 +402,17 @@ export function Visualization({
                       <UFDetailContent data={m} />
                     )}
                     {typeKey === 'HRRO' && (
-                      <HRROBatchChart
-                        history={m.time_history ?? null}
-                        unitPress={unitPress}
-                        unitFlux={unitFlux}
-                      />
+                      <>
+                        <HRROProcessFlowDiagram
+                          stage={m}
+                          unitPress={unitPress}
+                        />
+                        <HRROBatchChart
+                          history={m.time_history ?? null}
+                          unitPress={unitPress}
+                          unitFlux={unitFlux}
+                        />
+                      </>
                     )}
                   </div>
                 </div>
