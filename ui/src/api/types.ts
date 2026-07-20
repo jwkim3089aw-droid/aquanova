@@ -341,8 +341,27 @@ export interface KPIOut {
   mass_balance?: MassBalanceOut | null;
 }
 
+export interface PrecisionCorrection {
+  metric?: string | null;
+  status?: string | null;
+  raw_value?: number | null;
+  corrected_value?: number | null;
+}
+
+export interface PrecisionReport {
+  schema_version?: string | null;
+  enabled: boolean;
+  mode?: 'raw' | 'precision' | string | null;
+  status?: string | null;
+  applied_count: number;
+  skipped_count: number;
+  process_type?: string | null;
+  scope?: string | null;
+  corrections?: PrecisionCorrection[] | null;
+}
+
 export interface ScenarioOutput {
-  precision_report?: Record<string, unknown> | null;
+  precision_report?: PrecisionReport | null;
   scenario_id: string;
   streams: StreamOut[];
   kpi: KPIOut;

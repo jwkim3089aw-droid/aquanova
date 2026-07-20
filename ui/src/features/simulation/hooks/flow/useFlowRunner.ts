@@ -21,25 +21,9 @@ import {
 import { mapChemistryToBackend } from './utils';
 // 프론트엔드 데이터베이스 카탈로그 임포트
 import { getFallbackMembrane } from '../../data/membrane_catalog';
+import { readPrecisionModeEnabled } from '../../precisionMode';
 
 
-function isPrecisionModeOptIn(): boolean {
-  try {
-    if (typeof window === 'undefined') return false;
-    const url = new URL(window.location.href);
-    const queryValue =
-      url.searchParams.get('precision_mode') ??
-      url.searchParams.get('precisionMode') ??
-      url.searchParams.get('precision_mode');
-    if (['1', 'true', 'yes', 'on', 'wave'].includes(String(queryValue || '').toLowerCase())) return true;
-    const stored =
-      (window.localStorage.getItem('aquanova.precisionModeEnabled') ?? window.localStorage.getItem('aquanova.waveCorrectionEnabled')) ??
-      window.localStorage.getItem('aquanova.precision_mode_enabled');
-    return ['1', 'true', 'yes', 'on', 'wave'].includes(String(stored || '').toLowerCase());
-  } catch {
-    return false;
-  }
-}
 
 
 export function useFlowRunner(props: {
@@ -168,7 +152,7 @@ export function useFlowRunner(props: {
           return stage;
         });
 
-      const precisionModeEnabled = isPrecisionModeOptIn();
+      const precisionModeEnabled = readPrecisionModeEnabled();
       const payload: SimulationRequest = {
         simulation_id: cryptoRandomId(),
         project_id: resolveProjectId(),
@@ -188,8 +172,12 @@ export function useFlowRunner(props: {
 
       const output = await runSimulation(payload);
       const outDisp = convertROutToDisplay(output as any, unitMode);
+      const outDispWithPrecision = {
+        ...outDisp,
+        precision_report: output.precision_report ?? null,
+      };
 
-      setData(outDisp);
+      setData(outDispWithPrecision);
       setChemSummary((output as any).chemistry ?? null);
 
       applyStageChips(
