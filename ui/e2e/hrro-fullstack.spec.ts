@@ -466,6 +466,54 @@ test(
       formattedFlow(membraneFeed),
     );
 
+    await expect(
+      page.getByTestId('hrro-phase-status'),
+    ).toContainText('PF');
+
+    await expect(
+      page.getByTestId('hrro-phase-slider'),
+    ).toBeVisible();
+
+    await page
+      .getByTestId('hrro-phase-cc')
+      .click();
+
+    await expect(
+      page.getByTestId('hrro-phase-status'),
+    ).toContainText('CC');
+
+    await expect(
+      page.getByTestId('hrro-flow-drain'),
+    ).toContainText('0 m³/h/PV');
+
+    await expect(
+      page.getByTestId('hrro-flow-recycle'),
+    ).toContainText('4.5 m³/h/PV');
+
+    await expect(
+      page.getByTestId('hrro-flow-recycle'),
+    ).toContainText('ON');
+
+    await page
+      .getByTestId('hrro-phase-pf')
+      .click();
+
+    await expect(
+      page.getByTestId('hrro-phase-status'),
+    ).toContainText('PF');
+
+    await expect(
+      page.getByTestId('hrro-flow-drain'),
+    ).toContainText(
+      formattedFlow(drain),
+    );
+
+    await expect(
+      page.getByTestId('hrro-flow-recycle'),
+    ).toContainText(
+      formattedFlow(recycle),
+    );
+
     const body = page.locator('body');
 
     await expect(body).not.toContainText(
