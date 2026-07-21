@@ -703,9 +703,14 @@ class HRROModule(SimulationModule):
                 state.tot_perm_vol / max(state.target_perm_volume_m3, 1e-12),
             )
 
-            rec_p_req = (
-                state.history[-1].pressure_bar if is_pf and state.history else p_req
-            )
+            # p_req is recalculated for every CC and PF sample from the
+            # current blended feed, osmotic pressure, required NDP, spacer
+            # pressure drop, back pressure, and header loss.
+            #
+            # Do not carry the terminal CC pressure into PF history. Doing so
+            # hides the P-2 VFD pressure reduction even though hydraulics and
+            # energy are already using the newly calculated PF pressure.
+            rec_p_req = p_req
             rec_cf_loop = (
                 state.history[-1].tds_mgL if is_pf and state.history else cf_loop
             )
